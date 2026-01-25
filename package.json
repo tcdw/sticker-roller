@@ -1,0 +1,20 @@
+{
+  "name": "sticker-roller",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "bun run index.ts",
+    "generate": "bun run index.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@google/genai": "^1.38.0",
+    "@inquirer/prompts": "^8.2.0"
+  }
+}
