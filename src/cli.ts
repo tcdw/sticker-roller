@@ -92,6 +92,7 @@ Interactive Mode:
 
 Environment Variables:
   GEMINI_API_KEY        Your Google AI API key (required)
+  GEMINI_USER_AGENT     Custom User-Agent header (optional)
 
 Examples:
   bun run index.ts -s example -c 5

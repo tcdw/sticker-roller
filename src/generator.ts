@@ -33,7 +33,13 @@ export async function generateImages(
     );
   }
 
-  const ai = new GoogleGenAI({ apiKey });
+  const userAgent = process.env.GEMINI_USER_AGENT;
+  const ai = new GoogleGenAI({
+    apiKey,
+    httpOptions: userAgent
+      ? { headers: { "User-Agent": userAgent } }
+      : undefined,
+  });
 
   const aspectRatio =
     options.aspectRatio ||
