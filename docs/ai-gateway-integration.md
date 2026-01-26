@@ -1,4 +1,4 @@
-# AI Gateway 集成调研
+# AI Gateway 集成
 
 ## 背景
 
@@ -6,100 +6,88 @@
 
 ## 结论
 
-**不可行**，继续使用 Google AI Studio 直接 API。
+**已实现双模式支持**：
+- **AI Gateway 模式**：通过 Vercel AI SDK + ai-gateway 的 Vercel 路由
+- **Direct 模式**：直接调用 Google AI Studio API
 
-## 原因分析
+## 使用方式
 
-### ai-gateway 的 Gemini 代理限制
+### AI Gateway 模式
 
-1. **后端是 GCP Vertex AI** - ai-gateway 的 Gemini 路由走的是 `aiplatform.googleapis.com`，而非 Google AI Studio 的 `generativelanguage.googleapis.com`
+设置以下环境变量启用 AI Gateway 模式：
+
+```bash
+# 公司 ai-gateway
+AI_GATEWAY_URL=https://gateway.rightcapital.ai/api
+AI_GATEWAY_TOKEN=sk-rc-ai-xxx
+
+# 或者直接用 Vercel AI Gateway
+AI_GATEWAY_URL=https://ai-gateway.vercel.sh/v3/ai
+AI_GATEWAY_TOKEN=vck_xxx
+```
+
+### Direct 模式（默认）
+
+设置以下环境变量使用直连 Google API：
+
+```bash
+GEMINI_API_KEY=your-google-api-key
+GEMINI_USER_AGENT=optional-user-agent  # 可选
+```
+
+### 模式选择逻辑
+
+- 同时设置 `AI_GATEWAY_URL` 和 `AI_GATEWAY_TOKEN` → AI Gateway 模式
+- 否则 → Direct 模式（需要 `GEMINI_API_KEY`）
+
+## 调研历史
+
+### ai-gateway Gemini 路由的限制（不可用）
+
+之前尝试过直接使用 ai-gateway 的 Gemini 路由 (`/api/(gemini)/...`)，但存在以下问题：
+
+1. **后端是 GCP Vertex AI** - 走的是 `aiplatform.googleapis.com`，而非 Google AI Studio 的 `generativelanguage.googleapis.com`
 
 2. **User-Agent 限制** - 只允许 `GeminiCLI/` 开头的客户端
 
-3. **模型被强制覆盖** - ai-gateway 内部手册明确规定：「The model setting in your client will be ignored. The server always uses gemini-3-pro-preview regardless of your local configuration.」请求的 `gemini-3-pro-image-preview` 会被强制替换为 `gemini-3-pro-preview`（纯文本模型）
+3. **模型被强制覆盖** - ai-gateway 内部手册规定：「The model setting in your client will be ignored. The server always uses gemini-3-pro-preview regardless of your local configuration.」
 
-4. **Vertex AI 返回错误** - 因为实际调用的是不支持图片输出的模型，GCP Vertex AI 返回 400 错误：`Multi-modal output is not supported.`
+4. **Vertex AI 返回错误** - GCP Vertex AI 返回 400 错误：`Multi-modal output is not supported.`
 
-## 当前方案
+### 解决方案：使用 Vercel 路由
 
-继续使用 `GEMINI_API_KEY` 环境变量直接调用 Google AI Studio API：
+ai-gateway 的 Vercel 路由 (`/v1/chat/completions`) 走的是 Vercel AI Gateway，支持图片生成模型：
 
-```typescript
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-});
+- 模型：`google/gemini-3-pro-image`
+- 通过 `providerOptions.google.imageConfig` 设置 `aspectRatio` 和 `imageSize`
+
+## 技术实现
+
+### 依赖
+
+```bash
+bun add ai @ai-sdk/google
 ```
 
-## 未来可能的改进：使用 Vercel AI SDK + ai-gateway Vercel 路由
+### 代码结构
 
-### 可行路径
+`src/generator.ts` 包含两个实现：
 
-ai-gateway 有另一条 Vercel 路由 (`/v1/chat/completions`)，走的是 Vercel AI Gateway，支持图片生成模型：
+1. `generateWithGateway()` - 使用 Vercel AI SDK
+2. `generateWithDirectAPI()` - 使用 `@google/genai` SDK
 
-- 端点：`https://ai-gateway.vercel.sh/v1/chat/completions`
-- 模型：`google/gemini-3-pro-image`（白名单允许 `google/gemini-3*`）
-- 认证：公司 token
+根据环境变量自动选择。
 
-### 当前阻塞问题
+### 差异对比
 
-**Vercel AI SDK 不支持 `imageSize` 参数**（1K/2K/4K）
-
-| 功能 | 支持情况 |
-|------|---------|
-| `aspectRatio` | ✅ 通过 `providerOptions.google.imageConfig.aspectRatio` |
-| `imageSize` | ❌ 不支持 |
-
-相关 issue：https://github.com/vercel/ai/issues/11924
-
-### 待 SDK 支持后的实现方案
-
-1. 安装依赖：
-   ```bash
-   bun add ai @ai-sdk/google
-   ```
-
-2. 修改 `generator.ts`，使用 `generateText`：
-   ```typescript
-   import { generateText } from 'ai';
-   import { google } from '@ai-sdk/google';
-
-   // 走 ai-gateway 的 Vercel 路由
-   const result = await generateText({
-     model: google('gemini-3-pro-image', {
-       baseURL: process.env.AI_GATEWAY_URL + '/v1',
-       apiKey: process.env.AI_GATEWAY_TOKEN,
-     }),
-     prompt: options.sticker.prompt,
-     providerOptions: {
-       google: {
-         imageConfig: {
-           aspectRatio: '1:1',
-           imageSize: '1K',  // 待 SDK 支持
-         },
-       },
-     },
-   });
-
-   // 图片在 result.files 中
-   for (const file of result.files) {
-     if (file.mediaType.startsWith('image/')) {
-       await Bun.write(filePath, file.data);
-     }
-   }
-   ```
-
-3. 支持双模式（可选）：
-   - 有 `AI_GATEWAY_TOKEN` → 走 Vercel AI SDK + ai-gateway
-   - 只有 `GEMINI_API_KEY` → 继续用 `@google/genai` 直连
-
-### 注意事项
-
-- `generateText` 不支持 `n` 参数，需要循环多次调用生成多张图片
-- 需要处理 reference images 的传入方式（多模态输入）
-- 模型名称格式不同：
-  - 直连 Google API：`gemini-3-pro-image-preview`
-  - ai-gateway Vercel 路由：`google/gemini-3-pro-image`
+| 特性 | AI Gateway 模式 | Direct 模式 |
+|------|-----------------|-------------|
+| SDK | `ai` + `@ai-sdk/google` | `@google/genai` |
+| 模型名 | `gemini-3-pro-image` | `gemini-3-pro-image-preview` |
+| 认证 | `AI_GATEWAY_TOKEN` | `GEMINI_API_KEY` |
+| 用量追踪 | 统一到 ai-gateway | 各自 Google 账户 |
 
 ---
 
-*调研日期: 2026-01-26*
+*初始调研: 2026-01-26*
+*实现完成: 2026-01-26*

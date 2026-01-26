@@ -8,7 +8,7 @@ import {
   DEFAULT_ASPECT_RATIO,
   DEFAULT_IMAGE_SIZE,
 } from "./config";
-import { generateImages } from "./generator";
+import { generateImages, getGeneratorMode } from "./generator";
 
 interface CLIOptions {
   sticker: string;
@@ -91,8 +91,10 @@ Interactive Mode:
   Run without arguments to use the interactive menu.
 
 Environment Variables:
-  GEMINI_API_KEY        Your Google AI API key (required)
-  GEMINI_USER_AGENT     Custom User-Agent header (optional)
+  GEMINI_API_KEY        Your Google AI API key (required for direct mode)
+  GEMINI_USER_AGENT     Custom User-Agent header (optional, direct mode only)
+  AI_GATEWAY_URL        AI Gateway URL (enables gateway mode)
+  AI_GATEWAY_TOKEN      AI Gateway token (required for gateway mode)
 
 Examples:
   bun run index.ts -s example -c 5
@@ -160,7 +162,8 @@ async function interactiveMode(): Promise<CLIOptions> {
 }
 
 async function run(options: CLIOptions): Promise<void> {
-  console.log(`\nLoading sticker "${options.sticker}"...`);
+  console.log(`\nMode: ${getGeneratorMode()}`);
+  console.log(`Loading sticker "${options.sticker}"...`);
 
   const stickerConfig = await loadSticker(options.sticker);
 

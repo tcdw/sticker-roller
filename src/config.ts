@@ -127,6 +127,6 @@ export async function loadSticker(name: string): Promise<StickerConfig> {
 }
 
 export const SUPPORTED_ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"];
-export const SUPPORTED_IMAGE_SIZES = ["1K", "2K"];
+export const SUPPORTED_IMAGE_SIZES = ["1K", "2K", "4K"];
 export const DEFAULT_ASPECT_RATIO = "1:1";
 export const DEFAULT_IMAGE_SIZE = "1K";
