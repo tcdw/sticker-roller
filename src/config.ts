@@ -39,6 +39,18 @@ function getExtension(fileName: string): string {
   return fileName.slice(lastDot).toLowerCase();
 }
 
+async function findPromptFile(stickerDir: string): Promise<string | null> {
+  // Try prompt.md first, then prompt.txt
+  for (const fileName of ["prompt.md", "prompt.txt"]) {
+    const filePath = join(stickerDir, fileName);
+    const file = Bun.file(filePath);
+    if (await file.exists()) {
+      return filePath;
+    }
+  }
+  return null;
+}
+
 export async function listStickers(): Promise<string[]> {
   try {
     const entries = await readdir(STICKERS_DIR, { withFileTypes: true });
@@ -46,9 +58,8 @@ export async function listStickers(): Promise<string[]> {
 
     for (const entry of entries) {
       if (entry.isDirectory()) {
-        const promptPath = join(STICKERS_DIR, entry.name, "prompt.txt");
-        const promptFile = Bun.file(promptPath);
-        if (await promptFile.exists()) {
+        const promptPath = await findPromptFile(join(STICKERS_DIR, entry.name));
+        if (promptPath) {
           stickers.push(entry.name);
         }
       }
@@ -63,14 +74,14 @@ export async function listStickers(): Promise<string[]> {
 export async function loadSticker(name: string): Promise<StickerConfig> {
   const stickerDir = join(STICKERS_DIR, name);
 
-  // Load prompt
-  const promptPath = join(stickerDir, "prompt.txt");
-  const promptFile = Bun.file(promptPath);
+  // Load prompt (prefer .md over .txt)
+  const promptPath = await findPromptFile(stickerDir);
 
-  if (!(await promptFile.exists())) {
-    throw new Error(`Sticker "${name}" not found or missing prompt.txt`);
+  if (!promptPath) {
+    throw new Error(`Sticker "${name}" not found or missing prompt.md/prompt.txt`);
   }
 
+  const promptFile = Bun.file(promptPath);
   const prompt = (await promptFile.text()).trim();
 
   // Load reference images (sorted by filename)
