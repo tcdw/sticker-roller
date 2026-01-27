@@ -1,5 +1,5 @@
-import { GoogleGenAI } from "@google/genai";
 import { generateText, createGateway } from "ai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { join } from "node:path";
 import {
   type StickerConfig,
@@ -45,18 +45,53 @@ function isGatewayMode(): boolean {
 }
 
 /**
- * Generate images using Vercel AI SDK via ai-gateway
+ * Create the appropriate provider based on mode
  */
-async function generateWithGateway(
-  options: GenerateOptions,
-  aspectRatio: string,
-  imageSize: string
-): Promise<GenerateResult[]> {
-  const gateway = createGateway({
-    baseURL: process.env.AI_GATEWAY_URL,
-    apiKey: process.env.AI_GATEWAY_TOKEN,
-  });
+function createProvider() {
+  if (isGatewayMode()) {
+    return createGateway({
+      baseURL: process.env.AI_GATEWAY_URL,
+      apiKey: process.env.AI_GATEWAY_TOKEN,
+    });
+  } else {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error(
+        "GEMINI_API_KEY environment variable is not set. Please set it in your .env file.",
+      );
+    }
 
+    const userAgent = process.env.GEMINI_USER_AGENT;
+    return createGoogleGenerativeAI({
+      apiKey,
+      headers: userAgent ? { "User-Agent": userAgent } : undefined,
+    });
+  }
+}
+
+/**
+ * Get the model ID based on mode
+ */
+function getModelId(): string {
+  if (isGatewayMode()) {
+    // Gateway uses the mapped model name
+    return "google/gemini-3-pro-image";
+  } else {
+    // Direct API uses the actual model name
+    return "gemini-3-pro-image-preview";
+  }
+}
+
+export async function generateImages(
+  options: GenerateOptions,
+): Promise<GenerateResult[]> {
+  const aspectRatio =
+    options.aspectRatio || options.sticker.aspectRatio || DEFAULT_ASPECT_RATIO;
+  const imageSize =
+    options.imageSize || options.sticker.imageSize || DEFAULT_IMAGE_SIZE;
+
+  const provider = createProvider();
+  const modelId = getModelId();
   const results: GenerateResult[] = [];
   const timestamp = Date.now();
 
@@ -66,7 +101,8 @@ async function generateWithGateway(
     try {
       // Build message content with reference images
       const content: Array<
-        { type: "text"; text: string } | { type: "image"; image: string; mimeType: string }
+        | { type: "text"; text: string }
+        | { type: "image"; image: string; mimeType: string }
       > = [];
 
       // Add reference images
@@ -82,7 +118,7 @@ async function generateWithGateway(
       content.push({ type: "text", text: options.sticker.prompt });
 
       const result = await generateText({
-        model: gateway("google/gemini-3-pro-image"),
+        model: provider(modelId),
         messages: [{ role: "user", content }],
         providerOptions: {
           google: {
@@ -139,147 +175,6 @@ async function generateWithGateway(
   }
 
   return results;
-}
-
-/**
- * Generate images using Google GenAI SDK directly
- */
-async function generateWithDirectAPI(
-  options: GenerateOptions,
-  aspectRatio: string,
-  imageSize: string
-): Promise<GenerateResult[]> {
-  const apiKey = process.env.GEMINI_API_KEY;
-
-  if (!apiKey) {
-    throw new Error(
-      "GEMINI_API_KEY environment variable is not set. Please set it in your .env file."
-    );
-  }
-
-  const userAgent = process.env.GEMINI_USER_AGENT;
-  const ai = new GoogleGenAI({
-    apiKey,
-    httpOptions: {
-      // Explicitly set baseUrl to avoid GOOGLE_GEMINI_BASE_URL env var override
-      baseUrl: "https://generativelanguage.googleapis.com",
-      headers: userAgent ? { "User-Agent": userAgent } : undefined,
-    },
-  });
-
-  const config = {
-    responseModalities: ["IMAGE", "TEXT"],
-    imageConfig: {
-      aspectRatio,
-      imageSize,
-    },
-  };
-
-  const model = "gemini-3-pro-image-preview";
-  const results: GenerateResult[] = [];
-  const timestamp = Date.now();
-
-  for (let i = 0; i < options.count; i++) {
-    options.onProgress?.(i + 1, options.count);
-
-    try {
-      // Build content parts
-      const parts: Array<
-        { text: string } | { inlineData: { data: string; mimeType: string } }
-      > = [];
-
-      // Add reference images (sorted by filename, e.g., 1_myself.png, 2_them.png)
-      for (const refImage of options.sticker.referenceImages) {
-        parts.push({
-          inlineData: {
-            data: refImage.data,
-            mimeType: refImage.mimeType,
-          },
-        });
-      }
-
-      // Add prompt
-      parts.push({ text: options.sticker.prompt });
-
-      const contents = [
-        {
-          role: "user" as const,
-          parts,
-        },
-      ];
-
-      const response = await ai.models.generateContent({
-        model,
-        config,
-        contents,
-      });
-
-      // Find image in response
-      let savedFile = false;
-
-      if (response.candidates && response.candidates.length > 0) {
-        const candidate = response.candidates[0];
-        if (candidate?.content?.parts) {
-          for (const part of candidate.content.parts) {
-            if ("inlineData" in part && part.inlineData) {
-              const imageData = part.inlineData.data;
-              const mimeType = part.inlineData.mimeType || "image/png";
-
-              // Determine file extension
-              let ext = ".png";
-              if (mimeType === "image/jpeg") ext = ".jpg";
-              else if (mimeType === "image/webp") ext = ".webp";
-
-              const fileName = `${options.sticker.name}-${timestamp}-${i + 1}${ext}`;
-              const filePath = join(OUTPUT_DIR, fileName);
-
-              // Save the image
-              const buffer = Buffer.from(imageData as string, "base64");
-              await Bun.write(filePath, buffer);
-
-              results.push({
-                success: true,
-                filePath,
-              });
-              savedFile = true;
-              break;
-            }
-          }
-        }
-      }
-
-      if (!savedFile) {
-        results.push({
-          success: false,
-          error: "No image in response",
-        });
-      }
-    } catch (error) {
-      results.push({
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  return results;
-}
-
-export async function generateImages(
-  options: GenerateOptions
-): Promise<GenerateResult[]> {
-  const aspectRatio =
-    options.aspectRatio ||
-    options.sticker.aspectRatio ||
-    DEFAULT_ASPECT_RATIO;
-  const imageSize =
-    options.imageSize || options.sticker.imageSize || DEFAULT_IMAGE_SIZE;
-
-  if (isGatewayMode()) {
-    return generateWithGateway(options, aspectRatio, imageSize);
-  } else {
-    return generateWithDirectAPI(options, aspectRatio, imageSize);
-  }
 }
 
 /**

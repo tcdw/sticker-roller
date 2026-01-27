@@ -15,7 +15,6 @@
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.13",
-    "@google/genai": "^1.38.0",
     "@inquirer/prompts": "^8.2.0",
     "ai": "^6.0.49"
   }
