@@ -9,6 +9,7 @@ import {
   DEFAULT_IMAGE_SIZE,
 } from "./config";
 import { generateImages, getGeneratorMode } from "./generator";
+import { $ } from "bun";
 
 interface CLIOptions {
   sticker: string;
@@ -49,7 +50,7 @@ function parseArguments(): CLIOptions | null {
     const ratio = values.ratio || DEFAULT_ASPECT_RATIO;
     if (!SUPPORTED_ASPECT_RATIOS.includes(ratio)) {
       console.error(
-        `Error: ratio must be one of: ${SUPPORTED_ASPECT_RATIOS.join(", ")}`
+        `Error: ratio must be one of: ${SUPPORTED_ASPECT_RATIOS.join(", ")}`,
       );
       process.exit(1);
     }
@@ -57,7 +58,7 @@ function parseArguments(): CLIOptions | null {
     const size = values.size || DEFAULT_IMAGE_SIZE;
     if (!SUPPORTED_IMAGE_SIZES.includes(size)) {
       console.error(
-        `Error: size must be one of: ${SUPPORTED_IMAGE_SIZES.join(", ")}`
+        `Error: size must be one of: ${SUPPORTED_IMAGE_SIZES.join(", ")}`,
       );
       process.exit(1);
     }
@@ -107,7 +108,7 @@ async function interactiveMode(): Promise<CLIOptions> {
 
   if (stickers.length === 0) {
     console.error(
-      "No stickers found. Create a sticker folder in stickers/ with a prompt.txt file."
+      "No stickers found. Create a sticker folder in stickers/ with a prompt.txt file.",
     );
     process.exit(1);
   }
@@ -170,7 +171,9 @@ async function run(options: CLIOptions): Promise<void> {
   console.log(`Prompt: ${stickerConfig.prompt.substring(0, 100)}...`);
   const refCount = stickerConfig.referenceImages.length;
   if (refCount > 0) {
-    const fileNames = stickerConfig.referenceImages.map((r) => r.fileName).join(", ");
+    const fileNames = stickerConfig.referenceImages
+      .map((r) => r.fileName)
+      .join(", ");
     console.log(`Reference images (${refCount}): ${fileNames}`);
   } else {
     console.log("Reference images: None");
@@ -199,6 +202,15 @@ async function run(options: CLIOptions): Promise<void> {
   }
 
   console.log(`\nCompleted: ${successCount}/${results.length} successful`);
+
+  if (process.platform === "darwin") {
+    try {
+      await $`which terminal-notifier`.quiet();
+      await $`terminal-notifier -title "贴纸生成任务完成" -message "生成了 ${successCount}/${results.length} 张图片" -sound Glass`;
+    } catch {
+      // Ignore if terminal-notifier is not installed
+    }
+  }
 }
 
 export async function main(): Promise<void> {
@@ -214,7 +226,7 @@ export async function main(): Promise<void> {
   } catch (error) {
     console.error(
       "Error:",
-      error instanceof Error ? error.message : String(error)
+      error instanceof Error ? error.message : String(error),
     );
     process.exit(1);
   }
