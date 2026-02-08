@@ -1,17 +1,13 @@
-(best quality, masterpiece), vector illustration, flat color, sticker art style, chibi, anime style,
+Hero banner mascot illustration on pure white background (#ffffff), clean sticker-like chibi illustration style, thick clean outline, flat colors, minimal soft shading, simple shapes, cute and calm, big head small body proportion, simplified facial features, small nose and mouth, bright round eyes with simple highlights, slight blush with short vertical blush marks.
 
-## 角色设定 (Character Design)
+A cute OC girl peeking up from the bottom edge of the image (like leaning on a window/ledge): upper body only, both hands gripping the bottom frame/edge, shoulders and head visible above the lower border. She faces the visitor but slightly turned to the left; her gaze also directed left. Composition: character placed slightly left-of-center, large empty whitespace on the right for website text, safe crop margins.
 
-1girl, solo, long white hair in ponytail, thin dark gray scrunchie, ahoge, bright blue eyes, slight blush with vertical lines, orange hoodie, black turtleneck,
+Character design details: long white hair tied into a ponytail, thin dark gray scrunchie, a single ahoge strand on top, bright blue eyes, slight blush. Outfit: orange hoodie over a black turtleneck, slim black pants, black boots (boots may be partially out of frame due to upper-body crop). Clean silhouette, no complex accessories, no background objects, no patterns.
+High resolution, crisp edges, web-hero friendly, minimalistic.
 
-## 姿势与构图 (Pose & Composition based on Ref 1)
+## 不要实现的
 
-peeking from bottom, peeking over the edge, hands on the bottom edge, upper body only, leaning forward, looking at viewer, head tilted slightly, playful expression, positioned on the left side,
-
-## 风格渲染 (Rendering Style based on Ref 2)
-
-thick bold outlines, clean lines, vivid colors, simple shading, minimalist shadows, white background, negative space on top and right, simple background, high contrast, 2D
-
-## 不要实现的风格
-
-(photorealistic:1.4), 3d render, realism, sketching, messy lines, gradient shading, soft lighting, volumetric lighting, complex background, blurry, detailed nose, realistic lips, dirty face, extra fingers, text, watermark, signature, grey background, shadows on background
+photorealistic, realistic rendering, 3D, CGI, blender look, heavy texture, painterly thick brush, oil painting, detailed skin pores, cinematic lighting, dramatic shadows, strong rim light, deep contrast, complex gradients, glossy latex highlights,
+average anime style, cel-shading with harsh shadow blocks, highly detailed hair strands, overly sharp facial anatomy, nose bridge shading, heavy face shadow, overly mature proportions, sexy pose,
+busy background, scenery, room interior, props, text, watermark, logo, frame, border decoration,
+lowres, blurry, noisy, artifact, bad hands, extra fingers
