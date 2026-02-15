@@ -1,5 +1,5 @@
 import { readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { join, dirname, extname, isAbsolute, resolve } from "node:path";
 
 export interface ReferenceImage {
   data: string; // base64
@@ -22,6 +22,128 @@ export interface StickerOverrideConfig {
 
 const STICKERS_DIR = join(import.meta.dir, "..", "stickers");
 const SUPPORTED_IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp"];
+const INCLUDE_PATTERN = /\{\{\s*include\s*:\s*([^\}]+?)\s*\}\}/g;
+const INCLUDE_DIRS = [join(STICKERS_DIR, "_includes")];
+const MAX_INCLUDE_DEPTH = 20;
+
+function normalizeIncludePath(rawPath: string): string {
+  const trimmed = rawPath.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
+
+function getIncludeCandidates(
+  rawPath: string,
+  currentDir: string,
+): string[] {
+  const normalized = normalizeIncludePath(rawPath);
+  if (!normalized) return [];
+
+  const hasExtension = extname(normalized) !== "";
+  const suffixes = hasExtension ? [""] : [".md", ".txt", ""];
+  const candidates: string[] = [];
+
+  if (isAbsolute(normalized)) {
+    for (const suffix of suffixes) {
+      candidates.push(normalized + suffix);
+    }
+  } else {
+    const bases = [currentDir, ...INCLUDE_DIRS];
+    for (const base of bases) {
+      for (const suffix of suffixes) {
+        candidates.push(join(base, normalized + suffix));
+      }
+    }
+  }
+
+  return candidates;
+}
+
+async function resolveIncludePath(
+  rawPath: string,
+  currentDir: string,
+): Promise<string | null> {
+  const candidates = getIncludeCandidates(rawPath, currentDir);
+
+  for (const candidate of candidates) {
+    const absolutePath = resolve(candidate);
+    const file = Bun.file(absolutePath);
+    if (await file.exists()) {
+      return absolutePath;
+    }
+  }
+
+  return null;
+}
+
+async function readPromptFile(
+  filePath: string,
+  stack: string[],
+): Promise<string> {
+  const absolutePath = resolve(filePath);
+
+  if (stack.includes(absolutePath)) {
+    throw new Error(
+      `Circular include detected: ${[...stack, absolutePath].join(" -> ")}`,
+    );
+  }
+
+  if (stack.length >= MAX_INCLUDE_DEPTH) {
+    throw new Error(
+      `Include depth exceeded ${MAX_INCLUDE_DEPTH}. Check for nested includes.`,
+    );
+  }
+
+  stack.push(absolutePath);
+
+  try {
+    const fileText = await Bun.file(absolutePath).text();
+
+    if (!absolutePath.endsWith(".md")) {
+      return fileText;
+    }
+
+    const parts: string[] = [];
+    let lastIndex = 0;
+
+    for (const match of fileText.matchAll(INCLUDE_PATTERN)) {
+      if (match.index === undefined) continue;
+
+      parts.push(fileText.slice(lastIndex, match.index));
+
+      const includePath = await resolveIncludePath(
+        match[1],
+        dirname(absolutePath),
+      );
+
+      if (!includePath) {
+        throw new Error(
+          `Include file not found: "${match[1].trim()}" (from ${absolutePath})`,
+        );
+      }
+
+      const includedText = await readPromptFile(includePath, stack);
+      parts.push(includedText);
+
+      lastIndex = match.index + match[0].length;
+    }
+
+    parts.push(fileText.slice(lastIndex));
+    return parts.join("");
+  } finally {
+    stack.pop();
+  }
+}
+
+async function loadPromptWithIncludes(promptPath: string): Promise<string> {
+  const combined = await readPromptFile(promptPath, []);
+  return combined.trim();
+}
 
 function getMimeType(ext: string): string {
   const mimeTypes: Record<string, string> = {
@@ -81,8 +203,7 @@ export async function loadSticker(name: string): Promise<StickerConfig> {
     throw new Error(`Sticker "${name}" not found or missing prompt.md/prompt.txt`);
   }
 
-  const promptFile = Bun.file(promptPath);
-  const prompt = (await promptFile.text()).trim();
+  const prompt = await loadPromptWithIncludes(promptPath);
 
   // Load reference images (sorted by filename)
   const referenceImages: ReferenceImage[] = [];
