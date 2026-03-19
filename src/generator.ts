@@ -5,6 +5,7 @@ import {
   type StickerConfig,
   DEFAULT_ASPECT_RATIO,
   DEFAULT_IMAGE_SIZE,
+  DEFAULT_MODEL,
 } from "./config";
 
 const OUTPUT_DIR = join(import.meta.dir, "..", "output");
@@ -12,6 +13,7 @@ const OUTPUT_DIR = join(import.meta.dir, "..", "output");
 export interface GenerateOptions {
   sticker: StickerConfig;
   count: number;
+  model?: string;
   aspectRatio?: string;
   imageSize?: string;
   onProgress?: (current: number, total: number) => void;
@@ -70,15 +72,23 @@ function createProvider() {
 }
 
 /**
- * Get the model ID based on mode
+ * Get the model ID based on mode and configuration
  */
-function getModelId(): string {
+function getModelId(modelName: string = DEFAULT_MODEL): string {
   if (isGatewayMode()) {
     // Gateway uses the mapped model name
-    return "google/gemini-3-pro-image";
+    // For gemini-3-pro-image, it maps to google/gemini-3-pro-image
+    // For gemini-3.1-flash-image-preview, assume it maps similarly
+    if (modelName === "gemini-3-pro-image") {
+      return "google/gemini-3-pro-image";
+    }
+    return `google/${modelName}`;
   } else {
     // Direct API uses the actual model name
-    return "gemini-3-pro-image-preview";
+    if (modelName === "gemini-3-pro-image") {
+      return "gemini-3-pro-image-preview";
+    }
+    return modelName;
   }
 }
 
@@ -91,7 +101,7 @@ export async function generateImages(
     options.imageSize || options.sticker.imageSize || DEFAULT_IMAGE_SIZE;
 
   const provider = createProvider();
-  const modelId = getModelId();
+  const modelId = getModelId(options.model);
   const results: GenerateResult[] = [];
   const timestamp = Date.now();
 

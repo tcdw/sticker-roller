@@ -272,5 +272,10 @@ export async function listIncludes(): Promise<string[]> {
 
 export const SUPPORTED_ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"];
 export const SUPPORTED_IMAGE_SIZES = ["1K", "2K", "4K"];
+export const SUPPORTED_MODELS = [
+  "gemini-3-pro-image",
+  "gemini-3.1-flash-image-preview",
+];
 export const DEFAULT_ASPECT_RATIO = "1:1";
 export const DEFAULT_IMAGE_SIZE = "1K";
+export const DEFAULT_MODEL = "gemini-3-pro-image";

@@ -9,8 +9,10 @@ import {
   STICKERS_DIR,
   SUPPORTED_ASPECT_RATIOS,
   SUPPORTED_IMAGE_SIZES,
+  SUPPORTED_MODELS,
   DEFAULT_ASPECT_RATIO,
   DEFAULT_IMAGE_SIZE,
+  DEFAULT_MODEL,
 } from "./config";
 import { generateImages, getGeneratorMode } from "./generator";
 import { $ } from "bun";
@@ -20,6 +22,7 @@ interface CLIOptions {
   count: number;
   ratio: string;
   size: string;
+  model: string;
 }
 
 function parseArguments(): CLIOptions | null {
@@ -30,6 +33,7 @@ function parseArguments(): CLIOptions | null {
         count: { type: "string", short: "c" },
         ratio: { type: "string", short: "r" },
         size: { type: "string", short: "z" },
+        model: { type: "string", short: "m" },
         help: { type: "boolean", short: "h" },
       },
       allowPositionals: false,
@@ -67,11 +71,20 @@ function parseArguments(): CLIOptions | null {
       process.exit(1);
     }
 
+    const model = values.model || DEFAULT_MODEL;
+    if (!SUPPORTED_MODELS.includes(model)) {
+      console.error(
+        `Error: model must be one of: ${SUPPORTED_MODELS.join(", ")}`,
+      );
+      process.exit(1);
+    }
+
     return {
       sticker: values.sticker,
       count,
       ratio,
       size,
+      model,
     };
   } catch {
     return null;
@@ -90,6 +103,7 @@ Options:
   -c, --count <n>       Number of images to generate (default: 1)
   -r, --ratio <ratio>   Aspect ratio: ${SUPPORTED_ASPECT_RATIOS.join(", ")} (default: ${DEFAULT_ASPECT_RATIO})
   -z, --size <size>     Image size: ${SUPPORTED_IMAGE_SIZES.join(", ")} (default: ${DEFAULT_IMAGE_SIZE})
+  -m, --model <model>   Model: ${SUPPORTED_MODELS.join(", ")} (default: ${DEFAULT_MODEL}) 
   -h, --help            Show this help message
 
 Interactive Mode:
@@ -153,8 +167,17 @@ async function generateStickerInteractive(): Promise<CLIOptions> {
     default: DEFAULT_IMAGE_SIZE,
   });
 
+  const model = await select({
+    message: "Select model:",
+    choices: SUPPORTED_MODELS.map((m) => ({
+      name: m + (m === DEFAULT_MODEL ? " (default)" : ""),
+      value: m,
+    })),
+    default: DEFAULT_MODEL,
+  });
+
   const confirmed = await confirm({
-    message: `Generate ${count} image(s) for "${sticker}" with ${ratio} ratio at ${size} resolution?`,
+    message: `Generate ${count} image(s) for "${sticker}" with ${ratio} ratio at ${size} resolution using ${model}?`,
     default: true,
   });
 
@@ -163,7 +186,7 @@ async function generateStickerInteractive(): Promise<CLIOptions> {
     process.exit(0);
   }
 
-  return { sticker, count, ratio, size };
+  return { sticker, count, ratio, size, model };
 }
 
 async function run(options: CLIOptions): Promise<void> {
@@ -189,6 +212,7 @@ async function run(options: CLIOptions): Promise<void> {
     count: options.count,
     aspectRatio: options.ratio,
     imageSize: options.size,
+    model: options.model,
     onProgress: (current, total) => {
       console.log(`Generating image ${current}/${total}...`);
     },
