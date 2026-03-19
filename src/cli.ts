@@ -1,8 +1,12 @@
 import { parseArgs } from "node:util";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import { select, input, confirm } from "@inquirer/prompts";
 import {
   listStickers,
+  listIncludes,
   loadSticker,
+  STICKERS_DIR,
   SUPPORTED_ASPECT_RATIOS,
   SUPPORTED_IMAGE_SIZES,
   DEFAULT_ASPECT_RATIO,
@@ -103,7 +107,7 @@ Examples:
 `);
 }
 
-async function interactiveMode(): Promise<CLIOptions> {
+async function generateStickerInteractive(): Promise<CLIOptions> {
   const stickers = await listStickers();
 
   if (stickers.length === 0) {
@@ -213,16 +217,87 @@ async function run(options: CLIOptions): Promise<void> {
   }
 }
 
-export async function main(): Promise<void> {
-  let options = parseArguments();
+async function createStickerInteractive(): Promise<void> {
+  const currentDate = new Date().toISOString().slice(0, 10).replace(/-/g, ""); // Returns YYYYMMDD
+  const name = await input({
+    message: "Sticker name:",
+    default: `${currentDate}_sticker_name`,
+    validate: (value) => {
+      if (!value.match(/^[a-zA-Z0-9_-]+$/)) {
+        return "Name must contain only letters, numbers, underscores, and dashes";
+      }
+      return true;
+    },
+  });
 
-  if (!options) {
-    // Interactive mode
-    options = await interactiveMode();
+  const bases = await listIncludes();
+  let baseTemplate = "";
+
+  if (bases.length > 0) {
+    baseTemplate = await select({
+      message: "Select a base template (optional):",
+      choices: [
+        { name: "None", value: "" },
+        ...bases.map((b) => ({ name: b, value: b })),
+      ],
+    });
   }
 
+  const stickerDir = join(STICKERS_DIR, name);
+  const promptPath = join(stickerDir, "prompt.md");
+
+  // Check if directory exists (simple check via prompt file)
+  if (await Bun.file(promptPath).exists()) {
+    console.error(`Error: Sticker "${name}" already exists.`);
+    process.exit(1);
+  }
+
+  await mkdir(stickerDir, { recursive: true });
+
+  const content = baseTemplate ? `{{include: ${baseTemplate}}}\n\n` : "";
+
+  await Bun.write(promptPath, content);
+
+  console.log(`\n✓ Created sticker: ${name}`);
+  console.log(`  Path: ${promptPath}`);
+  console.log(
+    `  You can now edit prompt.md and add reference images to the folder.`,
+  );
+}
+
+export async function main(): Promise<void> {
+  const args = parseArguments();
+
+  if (args) {
+    try {
+      await run(args);
+    } catch (error) {
+      console.error(
+        "Error:",
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+    return;
+  }
+
+  // Interactive menu
+  const action = await select({
+    message: "What do you want to do?",
+    choices: [
+      { name: "Generate Sticker Images", value: "generate" },
+      { name: "Create New Sticker", value: "create" },
+      { name: "Exit", value: "exit" },
+    ],
+  });
+
   try {
-    await run(options);
+    if (action === "generate") {
+      const options = await generateStickerInteractive();
+      await run(options);
+    } else if (action === "create") {
+      await createStickerInteractive();
+    }
   } catch (error) {
     console.error(
       "Error:",

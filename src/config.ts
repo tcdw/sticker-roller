@@ -20,7 +20,7 @@ export interface StickerOverrideConfig {
   imageSize?: string;
 }
 
-const STICKERS_DIR = join(import.meta.dir, "..", "stickers");
+export const STICKERS_DIR = join(import.meta.dir, "..", "stickers");
 const SUPPORTED_IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp"];
 const INCLUDE_PATTERN = /\{\{\s*include\s*:\s*([^\}]+?)\s*\}\}/g;
 const INCLUDE_DIRS = [join(STICKERS_DIR, "_includes")];
@@ -37,10 +37,7 @@ function normalizeIncludePath(rawPath: string): string {
   return trimmed;
 }
 
-function getIncludeCandidates(
-  rawPath: string,
-  currentDir: string,
-): string[] {
+function getIncludeCandidates(rawPath: string, currentDir: string): string[] {
   const normalized = normalizeIncludePath(rawPath);
   if (!normalized) return [];
 
@@ -200,7 +197,9 @@ export async function loadSticker(name: string): Promise<StickerConfig> {
   const promptPath = await findPromptFile(stickerDir);
 
   if (!promptPath) {
-    throw new Error(`Sticker "${name}" not found or missing prompt.md/prompt.txt`);
+    throw new Error(
+      `Sticker "${name}" not found or missing prompt.md/prompt.txt`,
+    );
   }
 
   const prompt = await loadPromptWithIncludes(promptPath);
@@ -256,6 +255,19 @@ export async function loadSticker(name: string): Promise<StickerConfig> {
     referenceImages,
     ...overrideConfig,
   };
+}
+
+export async function listIncludes(): Promise<string[]> {
+  try {
+    const includesDir = INCLUDE_DIRS[0];
+    const entries = await readdir(includesDir, { withFileTypes: true });
+    return entries
+      .filter((e) => e.isFile() && !e.name.startsWith("."))
+      .map((e) => e.name.replace(/\.[^/.]+$/, "")) // Remove extension
+      .sort();
+  } catch {
+    return [];
+  }
 }
 
 export const SUPPORTED_ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"];
