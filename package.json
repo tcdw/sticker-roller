@@ -16,6 +16,7 @@
   "dependencies": {
     "@ai-sdk/google": "^3.0.13",
     "@inquirer/prompts": "^8.2.0",
-    "ai": "^6.0.49"
+    "ai": "^6.0.49",
+    "sharp": "^0.35.2"
   }
 }

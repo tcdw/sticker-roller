@@ -13,11 +13,13 @@ export interface StickerConfig {
   referenceImages: ReferenceImage[]; // 支持多张参考图，按文件名排序
   aspectRatio?: string;
   imageSize?: string;
+  removeBackground?: boolean;
 }
 
 export interface StickerOverrideConfig {
   aspectRatio?: string;
   imageSize?: string;
+  removeBackground?: boolean;
 }
 
 export const STICKERS_DIR = join(import.meta.dir, "..", "stickers");
@@ -279,3 +281,6 @@ export const SUPPORTED_MODELS = [
 export const DEFAULT_ASPECT_RATIO = "1:1";
 export const DEFAULT_IMAGE_SIZE = "1K";
 export const DEFAULT_MODEL = "gemini-3-pro-image";
+export const DEFAULT_REMOVE_BACKGROUND = true;
+
+export const BACKGROUND_KEY_COLOR = "#FF00FF";

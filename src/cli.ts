@@ -13,6 +13,8 @@ import {
   DEFAULT_ASPECT_RATIO,
   DEFAULT_IMAGE_SIZE,
   DEFAULT_MODEL,
+  DEFAULT_REMOVE_BACKGROUND,
+  BACKGROUND_KEY_COLOR,
 } from "./config";
 import { generateImages, getGeneratorMode } from "./generator";
 import { $ } from "bun";
@@ -23,6 +25,7 @@ interface CLIOptions {
   ratio: string;
   size: string;
   model: string;
+  removeBg: boolean;
 }
 
 function parseArguments(): CLIOptions | null {
@@ -35,6 +38,8 @@ function parseArguments(): CLIOptions | null {
         size: { type: "string", short: "z" },
         model: { type: "string", short: "m" },
         help: { type: "boolean", short: "h" },
+        "no-remove-bg": { type: "boolean" },
+        "remove-bg": { type: "boolean" },
       },
       allowPositionals: false,
     });
@@ -44,7 +49,6 @@ function parseArguments(): CLIOptions | null {
       process.exit(0);
     }
 
-    // If no sticker specified, return null to trigger interactive mode
     if (!values.sticker) {
       return null;
     }
@@ -79,12 +83,20 @@ function parseArguments(): CLIOptions | null {
       process.exit(1);
     }
 
+    let removeBg = DEFAULT_REMOVE_BACKGROUND;
+    if (values["no-remove-bg"]) {
+      removeBg = false;
+    } else if (values["remove-bg"]) {
+      removeBg = true;
+    }
+
     return {
       sticker: values.sticker,
       count,
       ratio,
       size,
       model,
+      removeBg,
     };
   } catch {
     return null;
@@ -103,11 +115,18 @@ Options:
   -c, --count <n>       Number of images to generate (default: 1)
   -r, --ratio <ratio>   Aspect ratio: ${SUPPORTED_ASPECT_RATIOS.join(", ")} (default: ${DEFAULT_ASPECT_RATIO})
   -z, --size <size>     Image size: ${SUPPORTED_IMAGE_SIZES.join(", ")} (default: ${DEFAULT_IMAGE_SIZE})
-  -m, --model <model>   Model: ${SUPPORTED_MODELS.join(", ")} (default: ${DEFAULT_MODEL}) 
+  -m, --model <model>   Model: ${SUPPORTED_MODELS.join(", ")} (default: ${DEFAULT_MODEL})
+  --no-remove-bg        Disable automatic background removal (default: enabled)
+  --remove-bg           Force enable background removal
   -h, --help            Show this help message
 
 Interactive Mode:
   Run without arguments to use the interactive menu.
+
+Background Removal:
+  When enabled, the model generates images with a ${BACKGROUND_KEY_COLOR} background
+  which is automatically keyed out to produce a transparent PNG.
+  This feature is on by default and can be disabled with --no-remove-bg.
 
 Environment Variables:
   GEMINI_API_KEY        Your Google AI API key (required for direct mode)
@@ -118,6 +137,7 @@ Environment Variables:
 Examples:
   bun run index.ts -s example -c 5
   bun run index.ts --sticker cute-cat --count 10 --ratio 16:9 --size 2K
+  bun run index.ts -s sticker-name --no-remove-bg
 `);
 }
 
@@ -186,7 +206,12 @@ async function generateStickerInteractive(): Promise<CLIOptions> {
     process.exit(0);
   }
 
-  return { sticker, count, ratio, size, model };
+  const removeBg = await confirm({
+    message: "Automatically remove background (chroma key #FF00FF → transparent PNG)?",
+    default: DEFAULT_REMOVE_BACKGROUND,
+  });
+
+  return { sticker, count, ratio, size, model, removeBg };
 }
 
 async function run(options: CLIOptions): Promise<void> {
@@ -213,6 +238,7 @@ async function run(options: CLIOptions): Promise<void> {
     aspectRatio: options.ratio,
     imageSize: options.size,
     model: options.model,
+    removeBackground: options.removeBg,
     onProgress: (current, total) => {
       console.log(`Generating image ${current}/${total}...`);
     },

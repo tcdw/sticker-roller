@@ -1,11 +1,14 @@
 import { generateText, createGateway } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { join } from "node:path";
+import sharp from "sharp";
 import {
   type StickerConfig,
   DEFAULT_ASPECT_RATIO,
   DEFAULT_IMAGE_SIZE,
   DEFAULT_MODEL,
+  DEFAULT_REMOVE_BACKGROUND,
+  BACKGROUND_KEY_COLOR,
 } from "./config";
 
 const OUTPUT_DIR = join(import.meta.dir, "..", "output");
@@ -16,6 +19,7 @@ export interface GenerateOptions {
   model?: string;
   aspectRatio?: string;
   imageSize?: string;
+  removeBackground?: boolean;
   onProgress?: (current: number, total: number) => void;
 }
 
@@ -38,6 +42,64 @@ type ImageConfigAspectRatio =
   | "21:9";
 
 type ImageConfigSize = "1K" | "2K" | "4K";
+
+const BACKGROUND_PROMPT_INSTRUCTION = `\n\nCRITICAL BACKGROUND INSTRUCTION: The entire background of this image must be a solid, uniform bright magenta color (${BACKGROUND_KEY_COLOR} / fuchsia). No gradients, no variations - pure ${BACKGROUND_KEY_COLOR}. The subject must be clearly separated from this magenta background. Do NOT use magenta, fuchsia, bright pink, purple, or violet colors anywhere on the subject, outline, glow, shadow, or edge pixels.`;
+
+function resolveRemoveBackground(options: GenerateOptions): boolean {
+  if (options.removeBackground !== undefined) return options.removeBackground;
+  if (options.sticker.removeBackground !== undefined) return options.sticker.removeBackground;
+  return DEFAULT_REMOVE_BACKGROUND;
+}
+
+async function removeBackground(imageBuffer: Buffer): Promise<Buffer> {
+  const { data, info } = await sharp(imageBuffer)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const threshold = 0.18;
+  const maxDistance = 1.2;
+
+  const clamp = (value: number): number => Math.max(0, Math.min(1, value));
+
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i]! / 255;
+    const g = data[i + 1]! / 255;
+    const b = data[i + 2]! / 255;
+    const a = data[i + 3]! / 255;
+
+    const dr = r - 1;
+    const dg = g;
+    const db = b - 1;
+    const distance = Math.sqrt(dr * dr + dg * dg + db * db);
+    const magentaDominance = Math.min(r, b) - g;
+    const magentaAmount = clamp((magentaDominance - 0.03) / 0.35);
+    const distanceAmount = clamp(
+      (maxDistance - distance) / (maxDistance - threshold),
+    );
+    const keyAmount = distance <= threshold ? 1 : distanceAmount * magentaAmount;
+    const foregroundAmount = 1 - keyAmount;
+
+    if (foregroundAmount <= 0.001) {
+      data[i] = 0;
+      data[i + 1] = 0;
+      data[i + 2] = 0;
+      data[i + 3] = 0;
+      continue;
+    }
+
+    data[i] = Math.round(clamp((r - keyAmount) / foregroundAmount) * 255);
+    data[i + 1] = Math.round(clamp(g / foregroundAmount) * 255);
+    data[i + 2] = Math.round(clamp((b - keyAmount) / foregroundAmount) * 255);
+    data[i + 3] = Math.round(a * foregroundAmount * 255);
+  }
+
+  return sharp(data, {
+    raw: { width: info.width, height: info.height, channels: 4 },
+  })
+    .png()
+    .toBuffer();
+}
 
 /**
  * Check if AI Gateway mode is enabled
@@ -99,6 +161,7 @@ export async function generateImages(
     options.aspectRatio || options.sticker.aspectRatio || DEFAULT_ASPECT_RATIO;
   const imageSize =
     options.imageSize || options.sticker.imageSize || DEFAULT_IMAGE_SIZE;
+  const doRemoveBg = resolveRemoveBackground(options);
 
   const provider = createProvider();
   const modelId = getModelId(options.model);
@@ -109,13 +172,11 @@ export async function generateImages(
     options.onProgress?.(i + 1, options.count);
 
     try {
-      // Build message content with reference images
       const content: Array<
         | { type: "text"; text: string }
         | { type: "image"; image: string; mimeType: string }
       > = [];
 
-      // Add reference images
       for (const refImage of options.sticker.referenceImages) {
         content.push({
           type: "image",
@@ -124,8 +185,11 @@ export async function generateImages(
         });
       }
 
-      // Add prompt
-      content.push({ type: "text", text: options.sticker.prompt });
+      const promptText = doRemoveBg
+        ? options.sticker.prompt + BACKGROUND_PROMPT_INSTRUCTION
+        : options.sticker.prompt;
+
+      content.push({ type: "text", text: promptText });
 
       const result = await generateText({
         model: provider(modelId),
@@ -140,25 +204,29 @@ export async function generateImages(
         },
       });
 
-      // Find image in response files
       let savedFile = false;
 
       if (result.files && result.files.length > 0) {
         for (const file of result.files) {
           if (file.mediaType?.startsWith("image/")) {
             const mimeType = file.mediaType;
+            let rawBuffer: Buffer = Buffer.from(file.base64, "base64") as Buffer;
 
-            // Determine file extension
-            let ext = ".png";
-            if (mimeType === "image/jpeg") ext = ".jpg";
-            else if (mimeType === "image/webp") ext = ".webp";
-
+            const ext = doRemoveBg
+              ? ".png"
+              : mimeType === "image/jpeg"
+                ? ".jpg"
+                : mimeType === "image/webp"
+                  ? ".webp"
+                  : ".png";
             const fileName = `${options.sticker.name}-${timestamp}-${i + 1}${ext}`;
             const filePath = join(OUTPUT_DIR, fileName);
 
-            // Save the image
-            const imageData = Buffer.from(file.base64, "base64");
-            await Bun.write(filePath, imageData);
+            if (doRemoveBg) {
+              rawBuffer = await removeBackground(rawBuffer);
+            }
+
+            await Bun.write(filePath, rawBuffer);
 
             results.push({
               success: true,
