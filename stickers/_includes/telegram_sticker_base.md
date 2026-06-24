@@ -2,7 +2,7 @@
 
 ## 基础注意事项
 
-- 使用的人物是我的自设，人物特征：anime style, long white hair in ponytail, thin dark gray scrunchie, ahoge, bright blue eyes, slight blush, orange hoodie, black turtleneck, slim black pants, black boots
+- 使用的人物是我的自设，人物特征：anime style, long white hair in ponytail, thin dark gray scrunchie, ahoge, bright blue eyes, slight blush, orange hoodie with white drawstrings, black turtleneck, slim black pants, black boots
 - 风格为 Q 版
 - 不要给图中人物和元素留白边
 - 不要附带任何文字
