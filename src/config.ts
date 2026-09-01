@@ -115,14 +115,17 @@ async function readPromptFile(
 
       parts.push(fileText.slice(lastIndex, match.index));
 
+      const rawIncludePath = match[1];
+      if (rawIncludePath === undefined) continue;
+
       const includePath = await resolveIncludePath(
-        match[1],
+        rawIncludePath,
         dirname(absolutePath),
       );
 
       if (!includePath) {
         throw new Error(
-          `Include file not found: "${match[1].trim()}" (from ${absolutePath})`,
+          `Include file not found: "${rawIncludePath.trim()}" (from ${absolutePath})`,
         );
       }
 
@@ -262,6 +265,8 @@ export async function loadSticker(name: string): Promise<StickerConfig> {
 export async function listIncludes(): Promise<string[]> {
   try {
     const includesDir = INCLUDE_DIRS[0];
+    if (includesDir === undefined) return [];
+
     const entries = await readdir(includesDir, { withFileTypes: true });
     return entries
       .filter((e) => e.isFile() && !e.name.startsWith("."))
