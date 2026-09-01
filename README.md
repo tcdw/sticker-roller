@@ -15,7 +15,8 @@ bun run index.ts
 ## Web server
 
 ```bash
-bun run dev   # local development
+bun run dev   # local development server (API + static frontend)
+bun run build # production frontend into dist/
 bun run web   # production server (serves dist when present)
 ```
 

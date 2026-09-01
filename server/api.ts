@@ -23,7 +23,7 @@ async function body(req: Request): Promise<Record<string, unknown>> {
 }
 function publicJob(repo: Repositories, id: string) {
   const result = repo.getJob(id); if (!result.job) return undefined;
-  return { ...result.job, options: JSON.parse(result.job.optionsSnapshot), items: result.items, events: result.events };
+  return { ...result.job, options: JSON.parse(result.job.optionsSnapshot), items: result.items.map((item) => ({ ...item, files: repo.getFileByItem(item.id) })), events: result.events };
 }
 function validateOptions(input: Record<string, unknown>) {
   const options: Record<string, unknown> = {};
