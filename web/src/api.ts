@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AssetRow, JobRow, ItemRow, FileRow } from '../../src/web-types';
+import type { AssetRow, FileRow, ItemRow, JobRow } from '../../src/web-types';
 export type Job = JobRow & {
   options: Record<string, unknown>;
   items: (ItemRow & { files?: FileRow[] })[];
@@ -21,7 +21,7 @@ const defaults: Options = {
   removeBackground: true,
   count: 1,
 };
-export const ASSET_TOKEN = /@\[([^\]]+)\]\(asset:([^\)]+)\)/g;
+export const ASSET_TOKEN = /@\[([^\]]+)\]\(asset:([^)]+)\)/g;
 export function referencedIdsFromPrompt(prompt: string, assets: AssetRow[]): string[] {
   const known = new Set(assets.map((asset) => asset.id));
   return [
@@ -36,7 +36,9 @@ export const api = {
   async request<T>(path: string, init?: RequestInit): Promise<T> {
     const r = await fetch(path, { ...init, headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) } });
     const data = await r.json();
-    if (!r.ok) throw new Error(data?.error?.message ?? '请求失败');
+    if (!r.ok) {
+      throw new Error(data?.error?.message ?? '请求失败');
+    }
     return data;
   },
   assets: () => api.request<AssetRow[]>('/api/assets'),

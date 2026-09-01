@@ -12,6 +12,8 @@ import { Checkbox } from './components/ui/Checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './components/ui/Dialog';
 import { Input } from './components/ui/Input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/Select';
+import { Textarea } from './components/ui/Textarea';
+import { TooltipProvider } from './components/ui/Tooltip';
 import './styles.css';
 
 const client = new QueryClient();
@@ -211,12 +213,7 @@ function MaterialDialog({
         </label>
         <label htmlFor="asset-content">
           内容
-          <textarea
-            id="asset-content"
-            className="ui-textarea"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-          />
+          <Textarea id="asset-content" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
         </label>
         <label htmlFor="asset-category">
           分组
@@ -358,9 +355,11 @@ function JobCard({ job }: { job: JobRow }) {
 }
 function App() {
   return (
-    <QueryClientProvider client={client}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
+    <TooltipProvider>
+      <QueryClientProvider client={client}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </TooltipProvider>
   );
 }
 const root = document.getElementById('root');

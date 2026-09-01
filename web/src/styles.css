@@ -1,14 +1,32 @@
 @import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap");
+@import "tailwindcss";
 :root {
+  --background: #f5efe7;
+  --foreground: #211d27;
+  --card: #ffffff;
+  --card-foreground: #211d27;
+  --primary: #ff795d;
+  --primary-foreground: #241f29;
+  --secondary: #ffffff;
+  --secondary-foreground: #241f29;
+  --muted: #ebe4da;
+  --muted-foreground: #706875;
+  --accent: #fff7f2;
+  --destructive: #ffd8d0;
+  --border: #c9c0c7;
+  --ring: #ff795d;
   font-family: "Space Grotesk", system-ui, sans-serif;
-  color: #211d27;
-  background: #f5efe7;
+  color: var(--foreground);
+  background: var(--background);
 }
-* {
-  box-sizing: border-box;
-}
-body {
-  margin: 0;
+@layer base {
+  * {
+    box-sizing: border-box;
+    border-color: var(--border);
+  }
+  body {
+    margin: 0;
+  }
 }
 button,
 input,
