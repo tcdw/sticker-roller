@@ -4,7 +4,7 @@ import { createRepositories } from "../src/db/repositories";
 import { createWorker, startGenerationWorker, stopGenerationWorker } from "../src/jobs";
 import { createApiHandler } from "./api";
 
-type ServerOptions = { databasePath?: string; outputDir?: string; generator?: Parameters<typeof createWorker>[0]["generator"] };
+type ServerOptions = { databasePath?: string; outputDir?: string; generator?: Parameters<typeof createWorker>[0]["generator"]; hostname?: string; port?: number };
 
 export async function createServer(options: ServerOptions = {}) {
   const database = await openDatabase(options.databasePath);
@@ -32,7 +32,7 @@ async function staticResponse(dist: string, pathname: string): Promise<Response>
     const fallback = Bun.file(resolve(distRoot, "index.html"));
     if (await fallback.exists()) return new Response(fallback);
   }
-  return new Response("Sticker Roller server is ready", { headers: { "content-type": "text/plain" } });
+  return new Response("not found", { status: 404, headers: { "content-type": "text/plain" } });
 }
 
 export async function startServer(options: ServerOptions = {}) {
@@ -41,8 +41,8 @@ export async function startServer(options: ServerOptions = {}) {
   await startGenerationWorker(app.worker);
   const dist = resolve(import.meta.dir, "../dist");
   const server = Bun.serve({
-    hostname: process.env.HOST ?? "127.0.0.1",
-    port: Number(process.env.PORT ?? 3000),
+    hostname: options.hostname ?? process.env.HOST ?? "127.0.0.1",
+    port: options.port ?? Number(process.env.PORT ?? 3000),
     async fetch(req) {
       const apiResponse = await app.api(req);
       if (new URL(req.url).pathname.startsWith("/api/") || apiResponse.status !== 404) return apiResponse;
