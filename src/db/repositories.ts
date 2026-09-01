@@ -42,6 +42,32 @@ export function createRepositories(db: Db) {
     startRequest: (itemId: string) => db.transaction((tx) => { const item=tx.select().from(items).where(eq(items.id,itemId)).get(); const existingItem = requireRow(item, `item ${itemId} not found`); if (existingItem.status !== "running") transitionError(`start request requires running item, got ${existingItem.status}`); const previous=tx.select({max:sql<number>`max(${requests.attempt})`}).from(requests).where(eq(requests.itemId,itemId)).get(); const attempt=(previous?.max ?? 0)+1, row={id:id(),itemId,attempt,status:"running" as const,startedAt:nowUtc()}; tx.insert(requests).values(row).run(); return row; }),
     finishRequest: (requestId: string, status: Exclude<RequestStatus,"running">, error?: string) => db.transaction((tx) => { const current=tx.select().from(requests).where(eq(requests.id,requestId)).get(); const existingRequest = requireRow(current, `request ${requestId} not found`); if (existingRequest.status !== "running") transitionError(`finish request requires running request, got ${existingRequest.status}`); return tx.update(requests).set({status,error,finishedAt:nowUtc()}).where(and(eq(requests.id,requestId),eq(requests.status,"running"))).returning().get(); }),
     finishItem: (itemId: string, status: Exclude<ItemStatus,"queued"|"running">, error?: string) => db.transaction(tx=>{const current=tx.select().from(items).where(eq(items.id,itemId)).get(); const existingItem = requireRow(current, `item ${itemId} not found`); if (existingItem.status !== "running") transitionError(`finish item requires running item, got ${existingItem.status}`); const row=tx.update(items).set({status,error,finishedAt:nowUtc(),heartbeatAt:null}).where(and(eq(items.id,itemId),eq(items.status,"running"))).returning().get(); if(row){const at=nowUtc(); refreshJob(tx,row.jobId,at); addEvent(tx,row.jobId,`item.${status}`,itemId,error);} return row;}),
+    finalizeRequest: (input: { requestId: string; itemId: string; status: Exclude<RequestStatus,"running">; error?: string; file?: { fileName: string; mimeType: string; sizeBytes: number } }) => db.transaction((tx) => {
+      const request = requireRow(tx.select().from(requests).where(eq(requests.id, input.requestId)).get(), `request ${input.requestId} not found`);
+      const item = requireRow(tx.select().from(items).where(eq(items.id, input.itemId)).get(), `item ${input.itemId} not found`);
+      if (request.itemId !== input.itemId || request.status !== "running") transitionError("finalize requires running request for item");
+      if (item.status !== "running") transitionError(`finalize requires running item, got ${item.status}`);
+      const at = nowUtc();
+      tx.update(requests).set({ status: input.status, error: input.error, finishedAt: at }).where(and(eq(requests.id, input.requestId), eq(requests.status, "running"))).run();
+      if (input.status === "succeeded" && input.file) {
+        if (input.file.fileName.includes("/") || input.file.fileName.includes("\\") || input.file.fileName.startsWith(".") || input.file.sizeBytes < 0) throw new Error("invalid generated file");
+        const registered = tx.select().from(files).where(and(eq(files.itemId, input.itemId), eq(files.fileName, input.file.fileName))).get();
+        if (!registered) tx.insert(files).values({ id: id(), itemId: input.itemId, ...input.file, createdAt: at }).run();
+      }
+      const itemRow = tx.update(items).set({ status: input.status, error: input.error, finishedAt: at, heartbeatAt: null }).where(and(eq(items.id, input.itemId), eq(items.status, "running"))).returning().get();
+      if (!itemRow) transitionError("item changed during finalize");
+      refreshJob(tx, itemRow.jobId, at); addEvent(tx, itemRow.jobId, `item.${input.status}`, itemRow.id, input.error); return itemRow;
+    }),
+    completeRegisteredItem: (itemId: string, fileName: string) => db.transaction((tx) => {
+      const item = requireRow(tx.select().from(items).where(eq(items.id, itemId)).get(), `item ${itemId} not found`);
+      if (item.status !== "running") transitionError(`complete registered item requires running item, got ${item.status}`);
+      const registered = tx.select().from(files).where(and(eq(files.itemId, itemId), eq(files.fileName, fileName))).get();
+      if (!registered) transitionError("registered file not found");
+      const at = nowUtc();
+      const row = tx.update(items).set({ status: "succeeded", error: null, finishedAt: at, heartbeatAt: null }).where(and(eq(items.id, itemId), eq(items.status, "running"))).returning().get();
+      if (!row) transitionError("item changed during registered completion");
+      refreshJob(tx, row.jobId, at); addEvent(tx, row.jobId, "item.succeeded", itemId, "registered output reused"); return row;
+    }),
     registerFile: (input: { itemId:string; fileName:string; mimeType:string; sizeBytes:number }) => { if(input.fileName.includes("/") || input.fileName.includes("\\") || input.fileName.startsWith(".") || input.sizeBytes < 0) throw new Error("invalid generated file"); const row={id:id(),...input,createdAt:nowUtc()}; db.insert(files).values(row).run(); return row; },
     getFile: (fileId: string) => db.select().from(files).where(eq(files.id,fileId)).get(),
     getFileByName: (fileName: string) => db.select().from(files).where(eq(files.fileName,fileName)).all(),
