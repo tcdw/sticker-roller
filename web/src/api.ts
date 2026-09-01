@@ -22,6 +22,8 @@ export const api = {
   retry: (id: string) => api.request<Job>(`/api/jobs/${id}/retry-failed`, { method: "POST", body: "{}" }),
 };
 
+export const saveAsset = (assetId: string | undefined, body: { name: string; prompt: string }) => assetId ? api.updateAsset(assetId, body) : api.createAsset(body);
+
 type DraftState = { assetId?: string; assetName: string; prompt: string; options: Options; set: (p: Partial<DraftState>) => void; reset: () => void };
 export const useDraft = create<DraftState>((set) => ({ assetName: "New text asset", prompt: "", options: { ...defaults }, set: (patch) => set(patch), reset: () => set({ assetId: undefined, assetName: "New text asset", prompt: "", options: { ...defaults } }) }));
 export const isActive = (status: string) => status === "queued" || status === "running";

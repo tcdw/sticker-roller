@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Outlet, RouterProvider, createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
-import { api, isActive, useDraft, type Job } from "./api";
+import { api, isActive, saveAsset, useDraft, type Job } from "./api";
 import type { AssetRow } from "../../src/web-types";
 import "./styles.css";
 
@@ -18,7 +18,7 @@ function Workspace() {
   const jobs = useQuery({ queryKey: ["jobs"], queryFn: api.jobs, refetchInterval: (q) => q.state.data?.some((j) => isActive(j.status)) ? 1500 : false });
   const [selected, setSelected] = useState<string>(); const [notice, setNotice] = useState("");
   const selectedAsset = assets.data?.find((a) => a.id === selected);
-  const save = useMutation({ mutationFn: async () => selectedAsset ? api.updateAsset(selectedAsset.id, { name: draft.assetName, prompt: draft.prompt }) : api.createAsset({ name: draft.assetName, prompt: draft.prompt }), onSuccess: (a) => { draft.set({ assetId: a.id }); qc.invalidateQueries({ queryKey: ["assets"] }); setNotice("Asset saved"); }, onError: (e) => setNotice((e as Error).message) });
+  const save = useMutation({ mutationFn: async () => saveAsset(selectedAsset?.id, { name: draft.assetName, prompt: draft.prompt }), onSuccess: (a) => { draft.set({ assetId: a.id }); setSelected(a.id); qc.invalidateQueries({ queryKey: ["assets"] }); setNotice("Asset saved"); }, onError: (e) => setNotice((e as Error).message) });
   const archive = useMutation({ mutationFn: api.archiveAsset, onSuccess: () => { qc.invalidateQueries({ queryKey: ["assets"] }); draft.reset(); setSelected(undefined); } });
   const submit = useMutation({ mutationFn: () => api.createJob({ assetId: draft.assetId, assetName: draft.assetName, prompt: draft.prompt, ...draft.options }), onSuccess: () => { qc.invalidateQueries({ queryKey: ["jobs"] }); setNotice("Job queued") }, onError: (e) => setNotice((e as Error).message) });
   useEffect(() => { if (selectedAsset) draft.set({ assetId: selectedAsset.id, assetName: selectedAsset.name, prompt: selectedAsset.prompt }); }, [selectedAsset?.id]);
