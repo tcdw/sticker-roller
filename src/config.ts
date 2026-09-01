@@ -1,5 +1,5 @@
-import { readdir } from "node:fs/promises";
-import { join, dirname, extname, isAbsolute, resolve } from "node:path";
+import { readdir } from 'node:fs/promises';
+import { join, dirname, extname, isAbsolute, resolve } from 'node:path';
 
 export interface ReferenceImage {
   data: string; // base64
@@ -22,18 +22,15 @@ export interface StickerOverrideConfig {
   removeBackground?: boolean;
 }
 
-export const STICKERS_DIR = join(import.meta.dir, "..", "stickers");
-const SUPPORTED_IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp"];
+export const STICKERS_DIR = join(import.meta.dir, '..', 'stickers');
+const SUPPORTED_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp'];
 const INCLUDE_PATTERN = /\{\{\s*include\s*:\s*([^\}]+?)\s*\}\}/g;
-const INCLUDE_DIRS = [join(STICKERS_DIR, "_includes")];
+const INCLUDE_DIRS = [join(STICKERS_DIR, '_includes')];
 const MAX_INCLUDE_DEPTH = 20;
 
 function normalizeIncludePath(rawPath: string): string {
   const trimmed = rawPath.trim();
-  if (
-    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-    (trimmed.startsWith("'") && trimmed.endsWith("'"))
-  ) {
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
     return trimmed.slice(1, -1).trim();
   }
   return trimmed;
@@ -43,8 +40,8 @@ function getIncludeCandidates(rawPath: string, currentDir: string): string[] {
   const normalized = normalizeIncludePath(rawPath);
   if (!normalized) return [];
 
-  const hasExtension = extname(normalized) !== "";
-  const suffixes = hasExtension ? [""] : [".md", ".txt", ""];
+  const hasExtension = extname(normalized) !== '';
+  const suffixes = hasExtension ? [''] : ['.md', '.txt', ''];
   const candidates: string[] = [];
 
   if (isAbsolute(normalized)) {
@@ -63,10 +60,7 @@ function getIncludeCandidates(rawPath: string, currentDir: string): string[] {
   return candidates;
 }
 
-async function resolveIncludePath(
-  rawPath: string,
-  currentDir: string,
-): Promise<string | null> {
+async function resolveIncludePath(rawPath: string, currentDir: string): Promise<string | null> {
   const candidates = getIncludeCandidates(rawPath, currentDir);
 
   for (const candidate of candidates) {
@@ -80,22 +74,15 @@ async function resolveIncludePath(
   return null;
 }
 
-async function readPromptFile(
-  filePath: string,
-  stack: string[],
-): Promise<string> {
+async function readPromptFile(filePath: string, stack: string[]): Promise<string> {
   const absolutePath = resolve(filePath);
 
   if (stack.includes(absolutePath)) {
-    throw new Error(
-      `Circular include detected: ${[...stack, absolutePath].join(" -> ")}`,
-    );
+    throw new Error(`Circular include detected: ${[...stack, absolutePath].join(' -> ')}`);
   }
 
   if (stack.length >= MAX_INCLUDE_DEPTH) {
-    throw new Error(
-      `Include depth exceeded ${MAX_INCLUDE_DEPTH}. Check for nested includes.`,
-    );
+    throw new Error(`Include depth exceeded ${MAX_INCLUDE_DEPTH}. Check for nested includes.`);
   }
 
   stack.push(absolutePath);
@@ -103,7 +90,7 @@ async function readPromptFile(
   try {
     const fileText = await Bun.file(absolutePath).text();
 
-    if (!absolutePath.endsWith(".md")) {
+    if (!absolutePath.endsWith('.md')) {
       return fileText;
     }
 
@@ -118,15 +105,10 @@ async function readPromptFile(
       const rawIncludePath = match[1];
       if (rawIncludePath === undefined) continue;
 
-      const includePath = await resolveIncludePath(
-        rawIncludePath,
-        dirname(absolutePath),
-      );
+      const includePath = await resolveIncludePath(rawIncludePath, dirname(absolutePath));
 
       if (!includePath) {
-        throw new Error(
-          `Include file not found: "${rawIncludePath.trim()}" (from ${absolutePath})`,
-        );
+        throw new Error(`Include file not found: "${rawIncludePath.trim()}" (from ${absolutePath})`);
       }
 
       const includedText = await readPromptFile(includePath, stack);
@@ -136,7 +118,7 @@ async function readPromptFile(
     }
 
     parts.push(fileText.slice(lastIndex));
-    return parts.join("");
+    return parts.join('');
   } finally {
     stack.pop();
   }
@@ -149,23 +131,23 @@ async function loadPromptWithIncludes(promptPath: string): Promise<string> {
 
 function getMimeType(ext: string): string {
   const mimeTypes: Record<string, string> = {
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".webp": "image/webp",
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
   };
-  return mimeTypes[ext] || "application/octet-stream";
+  return mimeTypes[ext] || 'application/octet-stream';
 }
 
 function getExtension(fileName: string): string {
-  const lastDot = fileName.lastIndexOf(".");
-  if (lastDot === -1) return "";
+  const lastDot = fileName.lastIndexOf('.');
+  if (lastDot === -1) return '';
   return fileName.slice(lastDot).toLowerCase();
 }
 
 async function findPromptFile(stickerDir: string): Promise<string | null> {
   // Try prompt.md first, then prompt.txt
-  for (const fileName of ["prompt.md", "prompt.txt"]) {
+  for (const fileName of ['prompt.md', 'prompt.txt']) {
     const filePath = join(stickerDir, fileName);
     const file = Bun.file(filePath);
     if (await file.exists()) {
@@ -202,9 +184,7 @@ export async function loadSticker(name: string): Promise<StickerConfig> {
   const promptPath = await findPromptFile(stickerDir);
 
   if (!promptPath) {
-    throw new Error(
-      `Sticker "${name}" not found or missing prompt.md/prompt.txt`,
-    );
+    throw new Error(`Sticker "${name}" not found or missing prompt.md/prompt.txt`);
   }
 
   const prompt = await loadPromptWithIncludes(promptPath);
@@ -235,7 +215,7 @@ export async function loadSticker(name: string): Promise<StickerConfig> {
     const ext = getExtension(fileName);
 
     referenceImages.push({
-      data: Buffer.from(buffer).toString("base64"),
+      data: Buffer.from(buffer).toString('base64'),
       mimeType: getMimeType(ext),
       fileName,
     });
@@ -243,7 +223,7 @@ export async function loadSticker(name: string): Promise<StickerConfig> {
 
   // Load optional config override
   let overrideConfig: StickerOverrideConfig = {};
-  const configPath = join(stickerDir, "config.json");
+  const configPath = join(stickerDir, 'config.json');
   const configFile = Bun.file(configPath);
 
   if (await configFile.exists()) {
@@ -269,23 +249,20 @@ export async function listIncludes(): Promise<string[]> {
 
     const entries = await readdir(includesDir, { withFileTypes: true });
     return entries
-      .filter((e) => e.isFile() && !e.name.startsWith("."))
-      .map((e) => e.name.replace(/\.[^/.]+$/, "")) // Remove extension
+      .filter((e) => e.isFile() && !e.name.startsWith('.'))
+      .map((e) => e.name.replace(/\.[^/.]+$/, '')) // Remove extension
       .sort();
   } catch {
     return [];
   }
 }
 
-export const SUPPORTED_ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"];
-export const SUPPORTED_IMAGE_SIZES = ["1K", "2K", "4K"];
-export const SUPPORTED_MODELS = [
-  "gemini-3-pro-image",
-  "gemini-3.1-flash-image-preview",
-];
-export const DEFAULT_ASPECT_RATIO = "1:1";
-export const DEFAULT_IMAGE_SIZE = "1K";
-export const DEFAULT_MODEL = "gemini-3-pro-image";
+export const SUPPORTED_ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4'];
+export const SUPPORTED_IMAGE_SIZES = ['1K', '2K', '4K'];
+export const SUPPORTED_MODELS = ['gemini-3-pro-image', 'gemini-3.1-flash-image-preview'];
+export const DEFAULT_ASPECT_RATIO = '1:1';
+export const DEFAULT_IMAGE_SIZE = '1K';
+export const DEFAULT_MODEL = 'gemini-3-pro-image';
 export const DEFAULT_REMOVE_BACKGROUND = true;
 
-export const BACKGROUND_KEY_COLOR = "#FF00FF";
+export const BACKGROUND_KEY_COLOR = '#FF00FF';

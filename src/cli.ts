@@ -1,7 +1,7 @@
-import { parseArgs } from "node:util";
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
-import { select, input, confirm } from "@inquirer/prompts";
+import { parseArgs } from 'node:util';
+import { mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { select, input, confirm } from '@inquirer/prompts';
 import {
   listStickers,
   listIncludes,
@@ -15,9 +15,9 @@ import {
   DEFAULT_MODEL,
   DEFAULT_REMOVE_BACKGROUND,
   BACKGROUND_KEY_COLOR,
-} from "./config";
-import { generateImages, getGeneratorMode } from "./generator";
-import { $ } from "bun";
+} from './config';
+import { generateImages, getGeneratorMode } from './generator';
+import { $ } from 'bun';
 
 interface CLIOptions {
   sticker: string;
@@ -32,14 +32,14 @@ function parseArguments(): CLIOptions | null {
   try {
     const { values } = parseArgs({
       options: {
-        sticker: { type: "string", short: "s" },
-        count: { type: "string", short: "c" },
-        ratio: { type: "string", short: "r" },
-        size: { type: "string", short: "z" },
-        model: { type: "string", short: "m" },
-        help: { type: "boolean", short: "h" },
-        "no-remove-bg": { type: "boolean" },
-        "remove-bg": { type: "boolean" },
+        sticker: { type: 'string', short: 's' },
+        count: { type: 'string', short: 'c' },
+        ratio: { type: 'string', short: 'r' },
+        size: { type: 'string', short: 'z' },
+        model: { type: 'string', short: 'm' },
+        help: { type: 'boolean', short: 'h' },
+        'no-remove-bg': { type: 'boolean' },
+        'remove-bg': { type: 'boolean' },
       },
       allowPositionals: false,
     });
@@ -55,38 +55,32 @@ function parseArguments(): CLIOptions | null {
 
     const count = values.count ? parseInt(values.count, 10) : 1;
     if (isNaN(count) || count < 1) {
-      console.error("Error: count must be a positive integer");
+      console.error('Error: count must be a positive integer');
       process.exit(1);
     }
 
     const ratio = values.ratio || DEFAULT_ASPECT_RATIO;
     if (!SUPPORTED_ASPECT_RATIOS.includes(ratio)) {
-      console.error(
-        `Error: ratio must be one of: ${SUPPORTED_ASPECT_RATIOS.join(", ")}`,
-      );
+      console.error(`Error: ratio must be one of: ${SUPPORTED_ASPECT_RATIOS.join(', ')}`);
       process.exit(1);
     }
 
     const size = values.size || DEFAULT_IMAGE_SIZE;
     if (!SUPPORTED_IMAGE_SIZES.includes(size)) {
-      console.error(
-        `Error: size must be one of: ${SUPPORTED_IMAGE_SIZES.join(", ")}`,
-      );
+      console.error(`Error: size must be one of: ${SUPPORTED_IMAGE_SIZES.join(', ')}`);
       process.exit(1);
     }
 
     const model = values.model || DEFAULT_MODEL;
     if (!SUPPORTED_MODELS.includes(model)) {
-      console.error(
-        `Error: model must be one of: ${SUPPORTED_MODELS.join(", ")}`,
-      );
+      console.error(`Error: model must be one of: ${SUPPORTED_MODELS.join(', ')}`);
       process.exit(1);
     }
 
     let removeBg = DEFAULT_REMOVE_BACKGROUND;
-    if (values["no-remove-bg"]) {
+    if (values['no-remove-bg']) {
       removeBg = false;
-    } else if (values["remove-bg"]) {
+    } else if (values['remove-bg']) {
       removeBg = true;
     }
 
@@ -113,9 +107,9 @@ Usage:
 Options:
   -s, --sticker <name>  Sticker name (folder name in stickers/)
   -c, --count <n>       Number of images to generate (default: 1)
-  -r, --ratio <ratio>   Aspect ratio: ${SUPPORTED_ASPECT_RATIOS.join(", ")} (default: ${DEFAULT_ASPECT_RATIO})
-  -z, --size <size>     Image size: ${SUPPORTED_IMAGE_SIZES.join(", ")} (default: ${DEFAULT_IMAGE_SIZE})
-  -m, --model <model>   Model: ${SUPPORTED_MODELS.join(", ")} (default: ${DEFAULT_MODEL})
+  -r, --ratio <ratio>   Aspect ratio: ${SUPPORTED_ASPECT_RATIOS.join(', ')} (default: ${DEFAULT_ASPECT_RATIO})
+  -z, --size <size>     Image size: ${SUPPORTED_IMAGE_SIZES.join(', ')} (default: ${DEFAULT_IMAGE_SIZE})
+  -m, --model <model>   Model: ${SUPPORTED_MODELS.join(', ')} (default: ${DEFAULT_MODEL})
   --no-remove-bg        Disable automatic background removal (default: enabled)
   --remove-bg           Force enable background removal
   -h, --help            Show this help message
@@ -145,24 +139,22 @@ async function generateStickerInteractive(): Promise<CLIOptions> {
   const stickers = await listStickers();
 
   if (stickers.length === 0) {
-    console.error(
-      "No stickers found. Create a sticker folder in stickers/ with a prompt.txt file.",
-    );
+    console.error('No stickers found. Create a sticker folder in stickers/ with a prompt.txt file.');
     process.exit(1);
   }
 
   const sticker = await select({
-    message: "Select a sticker:",
+    message: 'Select a sticker:',
     choices: stickers.map((s) => ({ name: s, value: s })),
   });
 
   const countStr = await input({
-    message: "How many images to generate?",
-    default: "1",
+    message: 'How many images to generate?',
+    default: '1',
     validate: (value) => {
       const num = parseInt(value, 10);
       if (isNaN(num) || num < 1) {
-        return "Please enter a positive integer";
+        return 'Please enter a positive integer';
       }
       return true;
     },
@@ -170,27 +162,27 @@ async function generateStickerInteractive(): Promise<CLIOptions> {
   const count = parseInt(countStr, 10);
 
   const ratio = await select({
-    message: "Select aspect ratio:",
+    message: 'Select aspect ratio:',
     choices: SUPPORTED_ASPECT_RATIOS.map((r) => ({
-      name: r + (r === DEFAULT_ASPECT_RATIO ? " (default)" : ""),
+      name: r + (r === DEFAULT_ASPECT_RATIO ? ' (default)' : ''),
       value: r,
     })),
     default: DEFAULT_ASPECT_RATIO,
   });
 
   const size = await select({
-    message: "Select image size:",
+    message: 'Select image size:',
     choices: SUPPORTED_IMAGE_SIZES.map((s) => ({
-      name: s + (s === DEFAULT_IMAGE_SIZE ? " (default)" : ""),
+      name: s + (s === DEFAULT_IMAGE_SIZE ? ' (default)' : ''),
       value: s,
     })),
     default: DEFAULT_IMAGE_SIZE,
   });
 
   const model = await select({
-    message: "Select model:",
+    message: 'Select model:',
     choices: SUPPORTED_MODELS.map((m) => ({
-      name: m + (m === DEFAULT_MODEL ? " (default)" : ""),
+      name: m + (m === DEFAULT_MODEL ? ' (default)' : ''),
       value: m,
     })),
     default: DEFAULT_MODEL,
@@ -202,12 +194,12 @@ async function generateStickerInteractive(): Promise<CLIOptions> {
   });
 
   if (!confirmed) {
-    console.log("Cancelled.");
+    console.log('Cancelled.');
     process.exit(0);
   }
 
   const removeBg = await confirm({
-    message: "Automatically remove background (chroma key #FF00FF → transparent PNG)?",
+    message: 'Automatically remove background (chroma key #FF00FF → transparent PNG)?',
     default: DEFAULT_REMOVE_BACKGROUND,
   });
 
@@ -223,12 +215,10 @@ async function run(options: CLIOptions): Promise<void> {
   console.log(`Prompt: ${stickerConfig.prompt.substring(0, 100)}...`);
   const refCount = stickerConfig.referenceImages.length;
   if (refCount > 0) {
-    const fileNames = stickerConfig.referenceImages
-      .map((r) => r.fileName)
-      .join(", ");
+    const fileNames = stickerConfig.referenceImages.map((r) => r.fileName).join(', ');
     console.log(`Reference images (${refCount}): ${fileNames}`);
   } else {
-    console.log("Reference images: None");
+    console.log('Reference images: None');
   }
   console.log(`Generating ${options.count} image(s)...\n`);
 
@@ -244,7 +234,7 @@ async function run(options: CLIOptions): Promise<void> {
     },
   });
 
-  console.log("\n--- Results ---");
+  console.log('\n--- Results ---');
   let successCount = 0;
   for (const result of results) {
     if (result.success) {
@@ -257,7 +247,7 @@ async function run(options: CLIOptions): Promise<void> {
 
   console.log(`\nCompleted: ${successCount}/${results.length} successful`);
 
-  if (process.platform === "darwin") {
+  if (process.platform === 'darwin') {
     try {
       await $`which terminal-notifier`.quiet();
       await $`terminal-notifier -title "贴纸生成任务完成" -message "生成了 ${successCount}/${results.length} 张图片" -sound Glass`;
@@ -268,33 +258,30 @@ async function run(options: CLIOptions): Promise<void> {
 }
 
 async function createStickerInteractive(): Promise<void> {
-  const currentDate = new Date().toISOString().slice(0, 10).replace(/-/g, ""); // Returns YYYYMMDD
+  const currentDate = new Date().toISOString().slice(0, 10).replace(/-/g, ''); // Returns YYYYMMDD
   const name = await input({
-    message: "Sticker name:",
+    message: 'Sticker name:',
     default: `${currentDate}_sticker_name`,
     validate: (value) => {
       if (!value.match(/^[a-zA-Z0-9_-]+$/)) {
-        return "Name must contain only letters, numbers, underscores, and dashes";
+        return 'Name must contain only letters, numbers, underscores, and dashes';
       }
       return true;
     },
   });
 
   const bases = await listIncludes();
-  let baseTemplate = "";
+  let baseTemplate = '';
 
   if (bases.length > 0) {
     baseTemplate = await select({
-      message: "Select a base template (optional):",
-      choices: [
-        { name: "None", value: "" },
-        ...bases.map((b) => ({ name: b, value: b })),
-      ],
+      message: 'Select a base template (optional):',
+      choices: [{ name: 'None', value: '' }, ...bases.map((b) => ({ name: b, value: b }))],
     });
   }
 
   const stickerDir = join(STICKERS_DIR, name);
-  const promptPath = join(stickerDir, "prompt.md");
+  const promptPath = join(stickerDir, 'prompt.md');
 
   // Check if directory exists (simple check via prompt file)
   if (await Bun.file(promptPath).exists()) {
@@ -304,15 +291,13 @@ async function createStickerInteractive(): Promise<void> {
 
   await mkdir(stickerDir, { recursive: true });
 
-  const content = baseTemplate ? `{{include: ${baseTemplate}}}\n\n` : "";
+  const content = baseTemplate ? `{{include: ${baseTemplate}}}\n\n` : '';
 
   await Bun.write(promptPath, content);
 
   console.log(`\n✓ Created sticker: ${name}`);
   console.log(`  Path: ${promptPath}`);
-  console.log(
-    `  You can now edit prompt.md and add reference images to the folder.`,
-  );
+  console.log(`  You can now edit prompt.md and add reference images to the folder.`);
 }
 
 export async function main(): Promise<void> {
@@ -322,10 +307,7 @@ export async function main(): Promise<void> {
     try {
       await run(args);
     } catch (error) {
-      console.error(
-        "Error:",
-        error instanceof Error ? error.message : String(error),
-      );
+      console.error('Error:', error instanceof Error ? error.message : String(error));
       process.exit(1);
     }
     return;
@@ -333,26 +315,23 @@ export async function main(): Promise<void> {
 
   // Interactive menu
   const action = await select({
-    message: "What do you want to do?",
+    message: 'What do you want to do?',
     choices: [
-      { name: "Generate Sticker Images", value: "generate" },
-      { name: "Create New Sticker", value: "create" },
-      { name: "Exit", value: "exit" },
+      { name: 'Generate Sticker Images', value: 'generate' },
+      { name: 'Create New Sticker', value: 'create' },
+      { name: 'Exit', value: 'exit' },
     ],
   });
 
   try {
-    if (action === "generate") {
+    if (action === 'generate') {
       const options = await generateStickerInteractive();
       await run(options);
-    } else if (action === "create") {
+    } else if (action === 'create') {
       await createStickerInteractive();
     }
   } catch (error) {
-    console.error(
-      "Error:",
-      error instanceof Error ? error.message : String(error),
-    );
+    console.error('Error:', error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
 }

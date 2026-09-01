@@ -31,6 +31,10 @@ test("hello world", () => {
 });
 ```
 
+## Formatting
+
+After modifying code, run `bun run check` and fix all reported issues.
+
 ## Frontend
 
 Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.

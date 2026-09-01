@@ -53,9 +53,7 @@
       "indexes": {
         "assets_name_uq": {
           "name": "assets_name_uq",
-          "columns": [
-            "name"
-          ],
+          "columns": ["name"],
           "isUnique": true
         }
       },
@@ -113,10 +111,7 @@
       "indexes": {
         "events_job_idx": {
           "name": "events_job_idx",
-          "columns": [
-            "job_id",
-            "id"
-          ],
+          "columns": ["job_id", "id"],
           "isUnique": false
         }
       },
@@ -125,12 +120,8 @@
           "name": "job_events_job_id_jobs_id_fk",
           "tableFrom": "job_events",
           "tableTo": "jobs",
-          "columnsFrom": [
-            "job_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["job_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -138,12 +129,8 @@
           "name": "job_events_item_id_job_items_id_fk",
           "tableFrom": "job_events",
           "tableTo": "job_items",
-          "columnsFrom": [
-            "item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["item_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -201,10 +188,7 @@
       "indexes": {
         "files_item_name_uq": {
           "name": "files_item_name_uq",
-          "columns": [
-            "item_id",
-            "file_name"
-          ],
+          "columns": ["item_id", "file_name"],
           "isUnique": true
         }
       },
@@ -213,12 +197,8 @@
           "name": "generated_files_item_id_job_items_id_fk",
           "tableFrom": "generated_files",
           "tableTo": "job_items",
-          "columnsFrom": [
-            "item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["item_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -290,17 +270,12 @@
       "indexes": {
         "items_job_ordinal_uq": {
           "name": "items_job_ordinal_uq",
-          "columns": [
-            "job_id",
-            "ordinal"
-          ],
+          "columns": ["job_id", "ordinal"],
           "isUnique": true
         },
         "items_queue_idx": {
           "name": "items_queue_idx",
-          "columns": [
-            "status"
-          ],
+          "columns": ["status"],
           "isUnique": false
         }
       },
@@ -309,12 +284,8 @@
           "name": "job_items_job_id_jobs_id_fk",
           "tableFrom": "job_items",
           "tableTo": "jobs",
-          "columnsFrom": [
-            "job_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["job_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -416,9 +387,7 @@
       "indexes": {
         "jobs_created_idx": {
           "name": "jobs_created_idx",
-          "columns": [
-            "created_at"
-          ],
+          "columns": ["created_at"],
           "isUnique": false
         }
       },
@@ -427,12 +396,8 @@
           "name": "jobs_asset_id_assets_id_fk",
           "tableFrom": "jobs",
           "tableTo": "assets",
-          "columnsFrom": [
-            "asset_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["asset_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -497,10 +462,7 @@
       "indexes": {
         "requests_item_attempt_uq": {
           "name": "requests_item_attempt_uq",
-          "columns": [
-            "item_id",
-            "attempt"
-          ],
+          "columns": ["item_id", "attempt"],
           "isUnique": true
         }
       },
@@ -509,12 +471,8 @@
           "name": "llm_requests_item_id_job_items_id_fk",
           "tableFrom": "llm_requests",
           "tableTo": "job_items",
-          "columnsFrom": [
-            "item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["item_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
