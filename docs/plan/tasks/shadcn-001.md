@@ -1,7 +1,7 @@
 ---
 id: shadcn-001
 scope: Actual shadcn/ui setup and primitive replacement
-status: complete
+status: done
 depends-on: []
 ---
 
