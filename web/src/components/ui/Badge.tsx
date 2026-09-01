@@ -1,10 +1,14 @@
-import type { HTMLAttributes, TextareaHTMLAttributes, SelectHTMLAttributes } from 'react';
-export function Badge({ className = '', ...props }: HTMLAttributes<HTMLSpanElement>) {
-  return <span className={`ui-badge ${className}`} {...props} />;
-}
-export function Textarea({ className = '', ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea className={`ui-textarea ${className}`} {...props} />;
-}
-export function Select({ className = '', ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select className={`ui-select ${className}`} {...props} />;
+import { cva, type VariantProps } from 'class-variance-authority';
+import type * as React from 'react';
+import { cn } from '../../lib/utils';
+
+const badgeVariants = cva('ui-badge', {
+  variants: {
+    variant: { default: '', secondary: 'badge-secondary', destructive: 'badge-danger', outline: 'badge-outline' },
+  },
+  defaultVariants: { variant: 'default' },
+});
+export interface BadgeProps extends React.HTMLAttributes<HTMLDivElement>, VariantProps<typeof badgeVariants> {}
+export function Badge({ className, variant, ...props }: BadgeProps) {
+  return <div className={cn(badgeVariants({ variant }), className)} {...props} />;
 }

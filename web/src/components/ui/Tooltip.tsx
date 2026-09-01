@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react';
-export function Tooltip({ text, children }: { text: string; children: ReactNode }) {
-  return <span title={text}>{children}</span>;
-}
+import * as TooltipPrimitive from '@radix-ui/react-tooltip';
+export const TooltipProvider = TooltipPrimitive.Provider;
+export const Tooltip = TooltipPrimitive.Root;
+export const TooltipTrigger = TooltipPrimitive.Trigger;
+export const TooltipContent = TooltipPrimitive.Content;

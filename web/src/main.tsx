@@ -1,16 +1,19 @@
+import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { createRootRoute, createRoute, createRouter, Outlet, RouterProvider } from '@tanstack/react-router';
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Outlet, RouterProvider, createRootRoute, createRoute, createRouter } from '@tanstack/react-router';
-import { api, isActive, referencedIdsFromPrompt, useDraft, type Job } from './api';
+import type { AssetRow, JobRow } from '../../src/web-types';
+import { api, isActive, type Options, referencedIdsFromPrompt, useDraft } from './api';
+import { Composer } from './components/Composer';
+import { Badge } from './components/ui/Badge';
 import { Button } from './components/ui/Button';
 import { Card } from './components/ui/Card';
-import { Badge } from './components/ui/Badge';
-import { Select } from './components/ui/Select';
-import { Dialog } from './components/ui/Dialog';
-import { Composer } from './components/Composer';
-import type { AssetRow, JobRow } from '../../src/web-types';
+import { Checkbox } from './components/ui/Checkbox';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './components/ui/Dialog';
+import { Input } from './components/ui/Input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/Select';
 import './styles.css';
+
 const client = new QueryClient();
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
 const workspaceRoute = createRoute({ getParentRoute: () => rootRoute, path: '/', component: Workspace });
@@ -114,25 +117,35 @@ function Workspace() {
           <Select
             disabled={loading}
             value={draft.options.model}
-            onChange={(e) => draft.set({ options: { ...draft.options, model: e.target.value } })}
+            onValueChange={(value) => draft.set({ options: { ...draft.options, model: value } })}
           >
-            <option>gemini-3-pro-image</option>
-            <option>gemini-3.1-flash-image-preview</option>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="gemini-3-pro-image">gemini-3-pro-image</SelectItem>
+              <SelectItem value="gemini-3.1-flash-image-preview">gemini-3.1-flash-image-preview</SelectItem>
+            </SelectContent>
           </Select>
           <Select
             disabled={loading}
             value={`${draft.options.aspectRatio} / ${draft.options.imageSize}`}
-            onChange={(e) => {
-              const [aspectRatio, imageSize] = e.target.value.split('/');
-              draft.set({
-                options: { ...draft.options, aspectRatio: aspectRatio!.trim(), imageSize: imageSize!.trim() },
-              });
+            onValueChange={(value) => {
+              const [aspectRatio, imageSize] = value.split(' / ');
+              if (aspectRatio && imageSize) {
+                draft.set({ options: { ...draft.options, aspectRatio, imageSize } });
+              }
             }}
           >
-            <option>1:1 / 1K</option>
-            <option>1:1 / 2K</option>
-            <option>16:9 / 2K</option>
-            <option>9:16 / 2K</option>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1:1 / 1K">1:1 / 1K</SelectItem>
+              <SelectItem value="1:1 / 2K">1:1 / 2K</SelectItem>
+              <SelectItem value="16:9 / 2K">16:9 / 2K</SelectItem>
+              <SelectItem value="9:16 / 2K">9:16 / 2K</SelectItem>
+            </SelectContent>
           </Select>
           <Button variant="secondary" disabled title="Phase 1 仅支持文本素材">
             添加图片（暂不可用）
@@ -184,29 +197,40 @@ function MaterialDialog({
     setName(asset?.name ?? '');
     setPrompt(asset?.prompt ?? '');
     setCategory(asset?.category ?? '提示词');
-  }, [asset?.id, value]);
+  }, [asset?.prompt, asset?.name, asset?.category]);
   return (
-    <Dialog open={value !== null} title={asset ? '编辑素材' : '创建可复用素材'} onClose={onClose}>
-      <label>
-        名称
-        <input value={name} onChange={(e) => setName(e.target.value)} />
-      </label>
-      <label>
-        内容
-        <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} />
-      </label>
-      <label>
-        分组
-        <input value={category} onChange={(e) => setCategory(e.target.value)} />
-      </label>
-      <Button disabled={!name.trim() || !prompt.trim()} onClick={() => onSave(asset?.id, { name, prompt, category })}>
-        保存素材
-      </Button>
-      {asset && (
-        <Button variant="danger" onClick={() => onArchive(asset.id)}>
-          归档素材
+    <Dialog open={value !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{asset ? '编辑素材' : '创建可复用素材'}</DialogTitle>
+          <DialogDescription>管理独立的可复用文本素材</DialogDescription>
+        </DialogHeader>
+        <label htmlFor="asset-name">
+          名称
+          <Input id="asset-name" value={name} onChange={(e) => setName(e.target.value)} />
+        </label>
+        <label htmlFor="asset-content">
+          内容
+          <textarea
+            id="asset-content"
+            className="ui-textarea"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+          />
+        </label>
+        <label htmlFor="asset-category">
+          分组
+          <Input id="asset-category" value={category} onChange={(e) => setCategory(e.target.value)} />
+        </label>
+        <Button disabled={!name.trim() || !prompt.trim()} onClick={() => onSave(asset?.id, { name, prompt, category })}>
+          保存素材
         </Button>
-      )}
+        {asset && (
+          <Button variant="danger" onClick={() => onArchive(asset.id)}>
+            归档素材
+          </Button>
+        )}
+      </DialogContent>
     </Dialog>
   );
 }
@@ -217,50 +241,63 @@ function ParametersDialog({
   onSave,
 }: {
   open: boolean;
-  options: Job['options'] & { count: number; removeBackground: boolean };
+  options: Options;
   onClose: () => void;
-  onSave: (o: any) => void;
+  onSave: (o: Options) => void;
 }) {
   const [count, setCount] = useState(options.count);
   const [removeBackground, setRemoveBackground] = useState(options.removeBackground);
   React.useEffect(() => {
     setCount(options.count);
     setRemoveBackground(options.removeBackground);
-  }, [open, options]);
+  }, [options]);
   return (
-    <Dialog open={open} title="更多参数" onClose={onClose}>
-      <label>
-        生成张数
-        <input
-          type="number"
-          min="1"
-          max="20"
-          value={count}
-          onChange={(e) => setCount(Math.max(1, Math.min(20, Number(e.target.value))))}
-        />
-      </label>
-      <label>
-        <input type="checkbox" checked={removeBackground} onChange={(e) => setRemoveBackground(e.target.checked)} />{' '}
-        移除背景
-      </label>
-      <Button onClick={() => onSave({ ...options, count, removeBackground })}>应用参数</Button>
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>更多参数</DialogTitle>
+          <DialogDescription>调整本次任务的生成参数</DialogDescription>
+        </DialogHeader>
+        <label htmlFor="image-count">
+          生成张数
+          <Input
+            id="image-count"
+            type="number"
+            min="1"
+            max="20"
+            value={count}
+            onChange={(e) => setCount(Math.max(1, Math.min(20, Number(e.target.value))))}
+          />
+        </label>
+        <div className="checkbox-label">
+          <Checkbox
+            id="remove-background"
+            checked={removeBackground}
+            onCheckedChange={(checked) => setRemoveBackground(checked === true)}
+          />
+          <label htmlFor="remove-background">移除背景</label>
+        </div>
+        <Button onClick={() => onSave({ ...options, count, removeBackground })}>应用参数</Button>
+      </DialogContent>
     </Dialog>
   );
 }
 function History({ jobs, loading }: { jobs: JobRow[]; loading: boolean }) {
-  if (loading)
+  if (loading) {
     return (
       <section className="history">
         <div className="empty">正在加载任务…</div>
       </section>
     );
-  if (!jobs.length)
+  }
+  if (!jobs.length) {
     return (
       <section className="history">
         <h2>任务历史</h2>
         <div className="empty">提交任务后，图片结果会显示在这里</div>
       </section>
     );
+  }
   return (
     <section className="history">
       <div className="history-title">
@@ -326,4 +363,8 @@ function App() {
     </QueryClientProvider>
   );
 }
-createRoot(document.getElementById('root')!).render(<App />);
+const root = document.getElementById('root');
+if (!root) {
+  throw new Error('Missing root element');
+}
+createRoot(root).render(<App />);

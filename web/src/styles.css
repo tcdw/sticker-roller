@@ -36,7 +36,9 @@ header {
   color: #ff795d;
 }
 .eyebrow {
-  font: 11px "DM Mono";
+  font:
+    11px "DM Mono",
+    monospace;
   letter-spacing: 0.12em;
   color: #a7a0ae;
   margin: 0 0 5px;
@@ -84,7 +86,9 @@ main {
   gap: 12px;
 }
 .section-title {
-  font: 600 14px "DM Mono";
+  font:
+    600 14px "DM Mono",
+    monospace;
   margin-bottom: 18px;
 }
 .ui-button {
@@ -116,10 +120,14 @@ main {
   border-radius: 99px;
   background: #ebe4da;
   padding: 4px 8px;
-  font: 11px "DM Mono";
+  font:
+    11px "DM Mono",
+    monospace;
 }
 .materials h3 {
-  font: 600 12px "DM Mono";
+  font:
+    600 12px "DM Mono",
+    monospace;
   margin: 20px 0 8px;
 }
 .material {
@@ -150,7 +158,9 @@ main {
 .material span,
 .muted,
 .hint {
-  font: 11px "DM Mono";
+  font:
+    11px "DM Mono",
+    monospace;
   color: #8b838e;
 }
 .task {
@@ -204,7 +214,9 @@ input:focus {
   border: 1px solid #ff795d;
   border-radius: 6px;
   padding: 2px 5px;
-  font: 12px "DM Mono";
+  font:
+    12px "DM Mono",
+    monospace;
   margin: 8px 4px 0 0;
 }
 .asset-token .ui-button {
@@ -217,7 +229,9 @@ input:focus {
 }
 .notice {
   color: #31704e;
-  font: 12px "DM Mono";
+  font:
+    12px "DM Mono",
+    monospace;
 }
 .error {
   color: #9b2c20;
@@ -241,7 +255,9 @@ input {
 }
 .notice {
   color: #31704e;
-  font: 12px "DM Mono";
+  font:
+    12px "DM Mono",
+    monospace;
 }
 .history {
   margin-top: 34px;
@@ -250,7 +266,9 @@ input {
   margin-bottom: 14px;
 }
 .history-title span {
-  font: 11px "DM Mono";
+  font:
+    11px "DM Mono",
+    monospace;
   color: #8b838e;
 }
 .empty {
@@ -268,7 +286,9 @@ input {
   margin: 14px 0;
 }
 .job small {
-  font: 11px "DM Mono";
+  font:
+    11px "DM Mono",
+    monospace;
   color: #817984;
 }
 .job > p {
@@ -297,7 +317,9 @@ input {
   display: grid;
   place-items: center;
   padding: 8px;
-  font: 11px "DM Mono";
+  font:
+    11px "DM Mono",
+    monospace;
   color: #6e6670;
 }
 .result img {
@@ -329,7 +351,9 @@ input {
 }
 .ui-dialog label {
   display: block;
-  font: 12px "DM Mono";
+  font:
+    12px "DM Mono",
+    monospace;
   margin: 14px 0;
 }
 .ui-dialog input,

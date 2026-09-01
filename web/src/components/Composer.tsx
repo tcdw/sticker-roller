@@ -1,9 +1,9 @@
 import { useRef } from 'react';
-import { useDraft, ASSET_TOKEN } from '../api';
 import type { AssetRow } from '../../../src/web-types';
+import { useDraft } from '../api';
+import { Badge } from './ui/Badge';
 import { Button } from './ui/Button';
 import { Card } from './ui/Card';
-import { Badge } from './ui/Badge';
 import { ScrollArea } from './ui/ScrollArea';
 import { Textarea } from './ui/Textarea';
 
@@ -34,7 +34,7 @@ export function Composer({
     const start = el?.selectionStart ?? draft.prompt.length;
     const end = el?.selectionEnd ?? start;
     const token = `@[${asset.name}](asset:${asset.id})`;
-    const prompt = draft.prompt.slice(0, start) + token + ' ' + draft.prompt.slice(end);
+    const prompt = `${draft.prompt.slice(0, start) + token} ${draft.prompt.slice(end)}`;
     draft.set({ prompt, referencedAssetIds: [...new Set([...draft.referencedAssetIds, asset.id])] });
     requestAnimationFrame(() => {
       el?.focus();
@@ -67,11 +67,11 @@ export function Composer({
                 </h3>
                 {items.map((asset) => (
                   <div className="material-wrap" key={asset.id}>
-                    <button className="material" onClick={() => insert(asset)}>
+                    <Button variant="secondary" className="material" onClick={() => insert(asset)}>
                       <strong>{asset.name}</strong>
                       <small>{asset.prompt.slice(0, 70)}</small>
                       <span>点击插入 @{asset.name}</span>
-                    </button>
+                    </Button>
                     <Button variant="ghost" onClick={() => onEdit(asset)}>
                       编辑
                     </Button>
@@ -103,7 +103,7 @@ export function Composer({
           placeholder="输入任务 prompt，再点击左侧素材插入 @素材 token…"
           aria-label="任务 prompt"
         />
-        <div className="token-list" aria-label="当前素材引用">
+        <div className="token-list">
           {mentioned.map((asset) => (
             <AssetReferenceToken key={asset.id} asset={asset} onRemove={() => removeToken(asset)} />
           ))}
