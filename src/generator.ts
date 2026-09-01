@@ -1,5 +1,6 @@
 import { generateText, createGateway } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import sharp from "sharp";
 import {
@@ -154,6 +155,36 @@ function getModelId(modelName: string = DEFAULT_MODEL): string {
   }
 }
 
+export interface SingleImageResult {
+  success: boolean;
+  imageBuffer?: Buffer;
+  mimeType?: string;
+  error?: string;
+}
+
+/** Generate one image without choosing a filesystem path. */
+export async function generateSingleImage(options: Omit<GenerateOptions, "count" | "onProgress">): Promise<SingleImageResult> {
+  const aspectRatio = options.aspectRatio || options.sticker.aspectRatio || DEFAULT_ASPECT_RATIO;
+  const imageSize = options.imageSize || options.sticker.imageSize || DEFAULT_IMAGE_SIZE;
+  const doRemoveBg = resolveRemoveBackground(options as GenerateOptions);
+  try {
+    const content: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType: string }> = [];
+    for (const refImage of options.sticker.referenceImages) content.push({ type: "image", image: refImage.data, mimeType: refImage.mimeType });
+    content.push({ type: "text", text: doRemoveBg ? options.sticker.prompt + BACKGROUND_PROMPT_INSTRUCTION : options.sticker.prompt });
+    const result = await generateText({
+      model: createProvider()(getModelId(options.model)),
+      messages: [{ role: "user", content }],
+      providerOptions: { google: { imageConfig: { aspectRatio: aspectRatio as ImageConfigAspectRatio, imageSize: imageSize as ImageConfigSize } } },
+    });
+    const file = result.files?.find((candidate) => candidate.mediaType?.startsWith("image/"));
+    if (!file) return { success: false, error: "No image in response" };
+    let imageBuffer = Buffer.from(file.base64, "base64") as Buffer;
+    if (doRemoveBg) imageBuffer = await removeBackground(imageBuffer);
+    return { success: true, imageBuffer, mimeType: doRemoveBg ? "image/png" : file.mediaType };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "image generation failed" };
+  }
+}
 export async function generateImages(
   options: GenerateOptions,
 ): Promise<GenerateResult[]> {
@@ -167,6 +198,7 @@ export async function generateImages(
   const modelId = getModelId(options.model);
   const results: GenerateResult[] = [];
   const timestamp = Date.now();
+  await mkdir(OUTPUT_DIR, { recursive: true });
 
   for (let i = 0; i < options.count; i++) {
     options.onProgress?.(i + 1, options.count);
