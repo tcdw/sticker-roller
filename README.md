@@ -12,7 +12,15 @@ To run:
 bun run index.ts
 ```
 
-## Prompt includes
+## Web server
+
+```bash
+bun run dev   # local development
+bun run web   # production server (serves dist when present)
+```
+
+The API binds to `127.0.0.1` by default. Set `DATABASE_PATH`, `OUTPUT_DIR`, `HOST`, or `PORT` as needed. Phase 1 stores text assets and never scans `stickers/` or `stickers_archived/`.
+
 
 `prompt.md` supports reusable includes with the syntax `{{include: path}}`.
 
