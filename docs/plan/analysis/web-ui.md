@@ -26,13 +26,13 @@
 - Dependencies: db-001, jobs-001.
 - Verification: request-level tests using real server handler/repositories; invalid input and path safety tests.
 
-### ui-001 — React workspace
+### ui-002 — Prototype-faithful material-reference workspace
 
-- Scope: Rsbuild app, router, query client, Zustand draft store, shadcn-style components, workspace layout and states.
-- Inputs: API contracts.
-- Outputs: user actions and rendered durable job progress.
-- Dependencies: api-001 contracts.
-- Verification: typecheck, production build, store/API behavior tests, manual browser acceptance.
+- Scope: reusable material semantics, server-side reference expansion, actual shadcn/ui component system, prototype-faithful two-region workspace.
+- Inputs: material references and authored prompt text.
+- Outputs: immutable expanded job prompt and material-reference UI.
+- Dependencies: db-001, api-001.
+- Verification: repository/API snapshot tests, caret insertion/store tests, production build and browser visual smoke.
 
 ## Integration enumeration
 

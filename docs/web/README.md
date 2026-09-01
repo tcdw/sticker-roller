@@ -1,64 +1,56 @@
-# Web application scope
+# Web workspace contract correction
 
-Status: Approved for implementation
+Status: Approved correction
 
-## Purpose and boundary
+## Core semantic model
 
-The web scope provides a local browser UI for creating text assets and running image-generation jobs. The Bun server owns persistence, credentials, job execution, recovery, and output delivery. The browser owns presentation and draft form state.
+An **asset is reusable source material**, not a prompt record.
 
-Phase 1 stores only text assets in SQLite. It does not migrate or scan `stickers/` or `stickers_archived/`; the existing CLI filesystem behavior remains independent.
+```text
+Asset: "雪乃碗" ──reference──┐
+Asset: "二次元人物" ──reference─┼──> prompt composer ──> one generation job
+Asset: "cronfox" ──reference──┘
+```
 
-## Concepts
+Each asset has a display name and reusable content. The content may be text in Phase 1. When the user selects an asset in the left sidebar, the UI inserts a reference token into the prompt composer, for example `@雪乃碗`, rather than replacing the entire editor with the asset content. The generated job stores an immutable expanded prompt snapshot.
+
+Phase 1 does not migrate or scan `stickers/` or `stickers_archived/`. Web assets are created and managed in SQLite only. Future asset kinds may contain images, but the asset-reference contract is already distinct from the current text-only storage limitation.
+
+## Corrected concepts
 
 | Concept | Definition |
 |---|---|
-| Asset | A user-managed text prompt stored in SQLite. |
-| Job | A durable generation request containing immutable prompt and parameter snapshots. |
-| Item | One requested output image within a job. |
-| LLM request | One provider call for one item, with durable status and attempt tracking. |
-| Worker | The server-owned loop that executes queued items independently of browsers. |
+| Asset | Reusable named material that can be referenced from a prompt. It is not itself the task prompt. |
+| Asset reference | A user-visible token such as `@雪乃碗` inserted into the prompt composer. |
+| Prompt composer | The complete editable task prompt containing prose and zero or more asset references. |
+| Expanded prompt | Server-resolved prompt snapshot used by the LLM; stored immutably on the job. |
+| Job | A durable generation request created from the composed prompt and parameter snapshot. |
 
-## Ownership and lifecycle
+## Required server behavior
+
+- `assets` stores reusable material and metadata, not task-specific prompt snapshots.
+- `POST /api/jobs` accepts a composed prompt plus asset reference IDs/tokens, validates every referenced asset, resolves references server-side, and stores both the authored prompt and expanded prompt snapshot.
+- A job must preserve the selected asset references at submission time. Later asset edits do not change existing jobs.
+- Asset content must never be silently appended to every job; only explicitly referenced assets are resolved.
+- API responses should expose asset summaries and reference identity, but never expose local absolute paths or credentials.
+
+## Corrected ownership flow
 
 ```text
-Browser ──HTTP──> Bun API ──transaction──> SQLite
-                         │                     │
-                         └──────> Worker <─────┘
-                                      │
-                                      └──> LLM provider ──> output file + SQLite record
+Asset sidebar ──insert @asset token──> Prompt composer
+                                          │
+                                          ├── text authored by user
+                                          └── referenced asset IDs
+                                                  │
+                                                  ▼
+                                           POST /api/jobs
+                                                  │
+                                  validate + resolve + snapshot in SQLite
+                                                  │
+                                                  ▼
+                                               Worker
 ```
 
-- API routes validate input and write durable state.
-- The worker claims queued items from SQLite and updates heartbeat/progress.
-- SQLite is the source of truth after refresh or server restart.
-- Startup recovery marks stale running provider requests as `failed` with an interruption error, requeues their running items, recomputes the related job, and records recovery events.
-- The Bun server lifecycle must await `startGenerationWorker(worker)` after repositories/database initialization and await `stopGenerationWorker(worker)` before closing the database during shutdown. `start()` performs stale recovery before launching its continuous drain loop; the drain loop is intentionally non-blocking for server startup, while worker failures are contained and surfaced. Worker execution is independent of browser connections.
-- Item heartbeat is the lease contract for both the worker item and its active LLM request; requests do not have a separate heartbeat column. The worker refreshes it while the provider call is active.
-- Job status is derived transactionally from item states: any running item means `running`; otherwise any queued item means `queued`; once all items are terminal, any failed item means `failed`, otherwise cancelled items mean `cancelled`, and otherwise the job is `succeeded`.
-- Output files are server-owned and exposed only through registered database records; the registry can be queried by file name and associated item/job.
+## Existing durable worker contract
 
-## Public entry points
-
-- `bun run dev`: local development server and frontend.
-- `bun run web`: production Bun server serving the built frontend and API.
-- `GET /api/assets`, `POST/PATCH /api/assets/:id`: text asset management.
-- `POST /api/jobs`, `GET /api/jobs/:id`: durable generation control and progress.
-- `POST /api/jobs/:id/cancel`, `POST /api/jobs/:id/retry-failed`: job control.
-- `GET /api/output/:fileName`: registered generated image delivery.
-
-## Cross-module decisions
-
-- SQLite schema changes use Drizzle migrations. Filesystem data migration is explicitly out of scope this round.
-- The worker has default concurrency 1.
-- Closing a browser never cancels a job.
-- Cancellation only prevents not-yet-started provider calls. The worker atomically creates the durable LLM request only while the claimed item belongs to a non-cancelled job; cancellation may transition a claimed item that has no running request to `cancelled`. Once that request transaction commits, the provider call is considered started and cancellation does not attempt to interrupt it.
-- Credentials remain in server environment variables and are never serialized to API/database business fields.
-- The generator must expose a single-image call so each provider request can be persisted independently.
-
-## Module index
-
-- Database client, schema, and repositories: `src/db/`
-- Durable worker: `src/jobs/`
-- HTTP API: `server/`
-- Shared contracts: `src/web-types.ts`
-- Browser UI: `web/`
+The server-owned worker, SQLite persistence, per-item LLM requests, browser-independent execution, restart recovery, output registry, cancellation boundary, and retry semantics remain unchanged.
