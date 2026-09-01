@@ -9,7 +9,13 @@ export interface WorkerOptions { repositories: Repositories; generator?: SingleI
 
 const safeError = (error: unknown) => {
   const message = error instanceof Error ? error.message : "generation failed";
-  return message.replace(/https?:\/\/[^\s]+/gi, "[provider url]").replace(/(authorization|x-api-key|api-key|token|secret|cookie)\s*[:=]\s*[^,;\s]+/gi, "$1=[redacted]").slice(0, 500);
+  return message
+    .replace(/https?:\/\/[^\s]+/gi, "[provider url]")
+    // Replace the complete value, not just the header name. This covers the
+    // standard Bearer/Basic forms as well as provider-specific credentials.
+    .replace(/(?:authorization|www-authenticate|x-api-key|api-key|token|secret|cookie)\s*[:=]\s*[^\r\n,;]+/gi, "[sensitive value redacted]")
+    .replace(/\b(?:bearer|basic)\s+[^\s,;]+/gi, "[sensitive value redacted]")
+    .slice(0, 500);
 };
 const extension = (mime: string) => mime === "image/jpeg" ? ".jpg" : mime === "image/webp" ? ".webp" : ".png";
 
@@ -47,7 +53,14 @@ export class GenerationWorker {
     const registered = this.repo.getFileByItem(itemId).find((file) => file.fileName.endsWith(".png") || file.fileName.endsWith(".jpg") || file.fileName.endsWith(".webp"));
     if (registered) { try { await stat(join(this.outputDir, registered.fileName)); this.repo.completeRegisteredItem(itemId, registered.fileName); return; } catch {} }
     const attempts = this.repo.listRequests(itemId); if (attempts.length >= this.maxAttempts) { this.repo.finishItem(itemId, "failed", "maximum attempts exceeded"); return; }
-    const request = this.repo.startRequest(itemId); const timer = setInterval(() => this.repo.updateHeartbeat(itemId), this.heartbeatMs);
+    let request;
+    try { request = this.repo.startRequest(itemId); } catch (error) {
+      // Cancellation may win the claim-to-call boundary. In that case no
+      // provider request was created, so leave the cancelled item terminal.
+      if (error instanceof Error && error.message.includes("cancelled")) return;
+      throw error;
+    }
+    const timer = setInterval(() => this.repo.updateHeartbeat(itemId), this.heartbeatMs);
     let finalPath: string | undefined; let tempPath: string | undefined;
     try {
       const options = JSON.parse(job.optionsSnapshot) as Record<string, unknown>;

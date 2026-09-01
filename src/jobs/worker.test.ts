@@ -23,6 +23,25 @@ describe("durable generation worker", () => {
     expect(calls).toBe(0); expect(repo.getJob(job.id).items.every((item) => item.status === "cancelled")).toBe(true); db.close();
   });
 
+  test("redacts complete sensitive provider credentials", async () => {
+    const db = await openDatabase(":memory:"); const repo = createRepositories(db.db);
+    const job = repo.createJob({ assetName: "x", prompt: "p", options: {}, count: 1 });
+    const worker = createWorker({ repositories: repo, outputDir: `/tmp/sticker-worker-${crypto.randomUUID()}`, generator: async () => { throw new Error("Authorization: Bearer TOPSECRET, Basic BASICSECRET x-api-key=KEYSECRET"); } });
+    await worker.drain();
+    const item = repo.getJob(job.id).items[0]!; const request = repo.listRequests(item.id)[0]!;
+    expect(request.error).not.toContain("TOPSECRET"); expect(request.error).not.toContain("BASICSECRET"); expect(request.error).not.toContain("KEYSECRET");
+    expect(item.error).not.toContain("TOPSECRET"); expect(item.status).toBe("failed"); db.close();
+  });
+
+  test("cancellation after claim but before request creation skips provider", async () => {
+    const db = await openDatabase(":memory:"); const base = createRepositories(db.db); const job = base.createJob({ assetName: "x", prompt: "p", options: {}, count: 1 });
+    let cancelled = false;
+    const repo = { ...base, claimNextItem: () => { const item = base.claimNextItem(); if (item && !cancelled) { cancelled = true; base.cancelJob(job.id); } return item; } } as typeof base;
+    let calls = 0;
+    await createWorker({ repositories: repo, generator: async () => { calls++; return { success: true, imageBuffer: Buffer.from("x"), mimeType: "image/png" }; } }).drain();
+    expect(calls).toBe(0); expect(repo.getJob(job.id).items[0]?.status).toBe("cancelled"); expect(repo.listRequests(repo.getJob(job.id).items[0]!.id)).toHaveLength(0); db.close();
+  });
+
   test("stale recovery is idempotent for registered output", async () => {
     const db = await openDatabase(":memory:"); const repo = createRepositories(db.db); const job = repo.createJob({ assetName: "x", prompt: "p", options: {}, count: 1 }); const item = repo.claimNextItem()!;
     repo.registerFile({ itemId: item.id, fileName: `${job.id}-1.png`, mimeType: "image/png", sizeBytes: 1 });

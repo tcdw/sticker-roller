@@ -45,6 +45,15 @@ describe("sqlite data layer", () => {
     handle.close();
   });
 
+  test("cancellation closes the claimed item start window", async () => {
+    const handle = await openDatabase(":memory:"); const repo = createRepositories(handle.db);
+    const job = repo.createJob({ assetName:"x", prompt:"p", options:{}, count:1 }); const item = repo.claimNextItem()!;
+    repo.cancelJob(job.id);
+    expect(repo.getJob(job.id).items[0]?.status).toBe("cancelled");
+    expect(() => repo.startRequest(item.id)).toThrow("cancelled");
+    expect(repo.listRequests(item.id)).toHaveLength(0); handle.close();
+  });
+
   test("looks up registered files by name, item, and id", async () => {
     const handle = await openDatabase(":memory:"); const repo = createRepositories(handle.db);
     const job = repo.createJob({assetName:"x",prompt:"p",options:{},count:1})!; const item = repo.claimNextItem()!;

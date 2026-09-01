@@ -51,7 +51,7 @@ Browser ──HTTP──> Bun API ──transaction──> SQLite
 - SQLite schema changes use Drizzle migrations. Filesystem data migration is explicitly out of scope this round.
 - The worker has default concurrency 1.
 - Closing a browser never cancels a job.
-- Cancellation only prevents not-yet-started provider calls.
+- Cancellation only prevents not-yet-started provider calls. The worker atomically creates the durable LLM request only while the claimed item belongs to a non-cancelled job; cancellation may transition a claimed item that has no running request to `cancelled`. Once that request transaction commits, the provider call is considered started and cancellation does not attempt to interrupt it.
 - Credentials remain in server environment variables and are never serialized to API/database business fields.
 - The generator must expose a single-image call so each provider request can be persisted independently.
 
