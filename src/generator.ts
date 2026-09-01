@@ -1,15 +1,15 @@
-import { generateText, createGateway } from 'ai';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createGateway, generateText } from 'ai';
 import sharp from 'sharp';
 import {
-  type StickerConfig,
+  BACKGROUND_KEY_COLOR,
   DEFAULT_ASPECT_RATIO,
   DEFAULT_IMAGE_SIZE,
   DEFAULT_MODEL,
   DEFAULT_REMOVE_BACKGROUND,
-  BACKGROUND_KEY_COLOR,
+  type StickerConfig,
 } from './config';
 
 const OUTPUT_DIR = join(import.meta.dir, '..', 'output');
@@ -37,8 +37,12 @@ type ImageConfigSize = '1K' | '2K' | '4K';
 const BACKGROUND_PROMPT_INSTRUCTION = `\n\nCRITICAL BACKGROUND INSTRUCTION: The entire background of this image must be a solid, uniform bright magenta color (${BACKGROUND_KEY_COLOR} / fuchsia). No gradients, no variations - pure ${BACKGROUND_KEY_COLOR}. The subject must be clearly separated from this magenta background. Do NOT use magenta, fuchsia, bright pink, purple, or violet colors anywhere on the subject, outline, glow, shadow, or edge pixels.`;
 
 function resolveRemoveBackground(options: GenerateOptions): boolean {
-  if (options.removeBackground !== undefined) return options.removeBackground;
-  if (options.sticker.removeBackground !== undefined) return options.sticker.removeBackground;
+  if (options.removeBackground !== undefined) {
+    return options.removeBackground;
+  }
+  if (options.sticker.removeBackground !== undefined) {
+    return options.sticker.removeBackground;
+  }
   return DEFAULT_REMOVE_BACKGROUND;
 }
 
@@ -154,8 +158,9 @@ export async function generateSingleImage(
   const doRemoveBg = resolveRemoveBackground(options as GenerateOptions);
   try {
     const content: Array<{ type: 'text'; text: string } | { type: 'image'; image: string; mimeType: string }> = [];
-    for (const refImage of options.sticker.referenceImages)
+    for (const refImage of options.sticker.referenceImages) {
       content.push({ type: 'image', image: refImage.data, mimeType: refImage.mimeType });
+    }
     content.push({
       type: 'text',
       text: doRemoveBg ? options.sticker.prompt + BACKGROUND_PROMPT_INSTRUCTION : options.sticker.prompt,
@@ -170,9 +175,13 @@ export async function generateSingleImage(
       },
     });
     const file = result.files?.find((candidate) => candidate.mediaType?.startsWith('image/'));
-    if (!file) return { success: false, error: 'No image in response' };
+    if (!file) {
+      return { success: false, error: 'No image in response' };
+    }
     let imageBuffer = Buffer.from(file.base64, 'base64') as Buffer;
-    if (doRemoveBg) imageBuffer = await removeBackground(imageBuffer);
+    if (doRemoveBg) {
+      imageBuffer = await removeBackground(imageBuffer);
+    }
     return { success: true, imageBuffer, mimeType: doRemoveBg ? 'image/png' : file.mediaType };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'image generation failed' };

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { unlink } from 'node:fs/promises';
 import { openDatabase } from './client';
 import { createRepositories } from './repositories';
-import { unlink } from 'node:fs/promises';
 
 describe('sqlite data layer', () => {
   test('migrates, persists, snapshots, and transitions', async () => {
@@ -24,10 +24,10 @@ describe('sqlite data layer', () => {
     repo.finishItem(item.id, 'succeeded');
     const failed = repo.claimNextItem()!;
     repo.finishItem(failed.id, 'failed', 'oops');
-    expect(repo.getJob(job!.id).job?.completedCount).toBe(1);
-    expect(repo.getJob(job!.id).job?.failedCount).toBe(1);
-    repo.retryFailed(job!.id);
-    expect(repo.claimNextItem()!.id).toBe(failed.id);
+    expect(repo.getJob(job?.id).job?.completedCount).toBe(1);
+    expect(repo.getJob(job?.id).job?.failedCount).toBe(1);
+    repo.retryFailed(job?.id);
+    expect(repo.claimNextItem()?.id).toBe(failed.id);
     first.close();
     const second = await openDatabase(path);
     expect(createRepositories(second.db).getAsset(asset.id)?.prompt).toBe('hello');
@@ -80,9 +80,9 @@ describe('sqlite data layer', () => {
     const recovered = repo.recoverStale(new Date(Date.now() + 1000).toISOString());
     expect(recovered.items[0]?.id).toBe(item.id);
     expect(recovered.requests[0]?.id).toBe(request.id);
-    expect(repo.getJob(job!.id).items[0]?.status).toBe('queued');
-    expect(repo.getJob(job!.id).job?.status).toBe('queued');
-    expect(repo.getJob(job!.id).events.map((event) => event.type)).toEqual([
+    expect(repo.getJob(job?.id).items[0]?.status).toBe('queued');
+    expect(repo.getJob(job?.id).job?.status).toBe('queued');
+    expect(repo.getJob(job?.id).events.map((event) => event.type)).toEqual([
       'job.created',
       'item.claimed',
       'request.recovered',

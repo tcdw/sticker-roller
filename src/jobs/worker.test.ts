@@ -95,7 +95,9 @@ describe('durable generation worker', () => {
     }).drain();
     expect(calls).toBe(0);
     expect(repo.getJob(job.id).items[0]?.status).toBe('cancelled');
-    expect(repo.listRequests(repo.getJob(job.id).items[0]!.id)).toHaveLength(0);
+    const itemId = repo.getJob(job.id).items[0]?.id;
+    expect(itemId).toBeDefined();
+    expect(repo.listRequests(itemId as string)).toHaveLength(0);
     db.close();
   });
 

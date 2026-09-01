@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { openDatabase } from '../src/db/client';
 import { createRepositories } from '../src/db/repositories';
-import { startServer } from './index';
 import { createApiHandler } from './api';
+import { startServer } from './index';
 
 const request = (method: string, path: string, value?: unknown) =>
   new Request(`http://localhost${path}`, {
@@ -94,7 +94,9 @@ describe('web API', () => {
       let detail: { items: Array<{ status: string }> } | undefined;
       for (let i = 0; i < 100; i++) {
         detail = (await (await fetch(`${base}/api/jobs/${job.id}`)).json()) as typeof detail;
-        if (detail?.items[0]?.status === 'succeeded') break;
+        if (detail?.items[0]?.status === 'succeeded') {
+          break;
+        }
         await Bun.sleep(10);
       }
       expect(detail?.items[0]?.status).toBe('succeeded');

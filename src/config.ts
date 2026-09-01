@@ -1,5 +1,5 @@
 import { readdir } from 'node:fs/promises';
-import { join, dirname, extname, isAbsolute, resolve } from 'node:path';
+import { dirname, extname, isAbsolute, join, resolve } from 'node:path';
 
 export interface ReferenceImage {
   data: string; // base64
@@ -24,7 +24,7 @@ export interface StickerOverrideConfig {
 
 export const STICKERS_DIR = join(import.meta.dir, '..', 'stickers');
 const SUPPORTED_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp'];
-const INCLUDE_PATTERN = /\{\{\s*include\s*:\s*([^\}]+?)\s*\}\}/g;
+const INCLUDE_PATTERN = /\{\{\s*include\s*:\s*([^}]+?)\s*\}\}/g;
 const INCLUDE_DIRS = [join(STICKERS_DIR, '_includes')];
 const MAX_INCLUDE_DEPTH = 20;
 
@@ -38,7 +38,9 @@ function normalizeIncludePath(rawPath: string): string {
 
 function getIncludeCandidates(rawPath: string, currentDir: string): string[] {
   const normalized = normalizeIncludePath(rawPath);
-  if (!normalized) return [];
+  if (!normalized) {
+    return [];
+  }
 
   const hasExtension = extname(normalized) !== '';
   const suffixes = hasExtension ? [''] : ['.md', '.txt', ''];
@@ -98,12 +100,16 @@ async function readPromptFile(filePath: string, stack: string[]): Promise<string
     let lastIndex = 0;
 
     for (const match of fileText.matchAll(INCLUDE_PATTERN)) {
-      if (match.index === undefined) continue;
+      if (match.index === undefined) {
+        continue;
+      }
 
       parts.push(fileText.slice(lastIndex, match.index));
 
       const rawIncludePath = match[1];
-      if (rawIncludePath === undefined) continue;
+      if (rawIncludePath === undefined) {
+        continue;
+      }
 
       const includePath = await resolveIncludePath(rawIncludePath, dirname(absolutePath));
 
@@ -141,7 +147,9 @@ function getMimeType(ext: string): string {
 
 function getExtension(fileName: string): string {
   const lastDot = fileName.lastIndexOf('.');
-  if (lastDot === -1) return '';
+  if (lastDot === -1) {
+    return '';
+  }
   return fileName.slice(lastDot).toLowerCase();
 }
 
@@ -245,7 +253,9 @@ export async function loadSticker(name: string): Promise<StickerConfig> {
 export async function listIncludes(): Promise<string[]> {
   try {
     const includesDir = INCLUDE_DIRS[0];
-    if (includesDir === undefined) return [];
+    if (includesDir === undefined) {
+      return [];
+    }
 
     const entries = await readdir(includesDir, { withFileTypes: true });
     return entries

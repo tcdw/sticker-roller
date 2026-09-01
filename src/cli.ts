@@ -1,23 +1,23 @@
-import { parseArgs } from 'node:util';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { select, input, confirm } from '@inquirer/prompts';
+import { parseArgs } from 'node:util';
+import { confirm, input, select } from '@inquirer/prompts';
+import { $ } from 'bun';
 import {
-  listStickers,
+  BACKGROUND_KEY_COLOR,
+  DEFAULT_ASPECT_RATIO,
+  DEFAULT_IMAGE_SIZE,
+  DEFAULT_MODEL,
+  DEFAULT_REMOVE_BACKGROUND,
   listIncludes,
+  listStickers,
   loadSticker,
   STICKERS_DIR,
   SUPPORTED_ASPECT_RATIOS,
   SUPPORTED_IMAGE_SIZES,
   SUPPORTED_MODELS,
-  DEFAULT_ASPECT_RATIO,
-  DEFAULT_IMAGE_SIZE,
-  DEFAULT_MODEL,
-  DEFAULT_REMOVE_BACKGROUND,
-  BACKGROUND_KEY_COLOR,
 } from './config';
 import { generateImages, getGeneratorMode } from './generator';
-import { $ } from 'bun';
 
 interface CLIOptions {
   sticker: string;
@@ -54,7 +54,7 @@ function parseArguments(): CLIOptions | null {
     }
 
     const count = values.count ? parseInt(values.count, 10) : 1;
-    if (isNaN(count) || count < 1) {
+    if (Number.isNaN(count) || count < 1) {
       console.error('Error: count must be a positive integer');
       process.exit(1);
     }
@@ -153,7 +153,7 @@ async function generateStickerInteractive(): Promise<CLIOptions> {
     default: '1',
     validate: (value) => {
       const num = parseInt(value, 10);
-      if (isNaN(num) || num < 1) {
+      if (Number.isNaN(num) || num < 1) {
         return 'Please enter a positive integer';
       }
       return true;

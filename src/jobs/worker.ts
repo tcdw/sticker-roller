@@ -1,8 +1,8 @@
 import { mkdir, rename, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { StickerConfig } from '../config';
 import type { Repositories } from '../db/repositories';
 import { generateSingleImage, type SingleImageResult } from '../generator';
-import type { StickerConfig } from '../config';
 
 export type SingleImageGenerator = (input: {
   sticker: StickerConfig;
@@ -59,9 +59,13 @@ export class GenerationWorker {
     this.repo.recoverStale(new Date(Date.now() - this.staleAfterMs).toISOString());
   }
   async runOnce(): Promise<boolean> {
-    if (this.stopped || this.active) return false;
+    if (this.stopped || this.active) {
+      return false;
+    }
     const item = this.repo.claimNextItem();
-    if (!item) return false;
+    if (!item) {
+      return false;
+    }
     this.active = this.process(item.id).finally(() => {
       this.active = undefined;
     });
@@ -73,7 +77,9 @@ export class GenerationWorker {
   }
   private async runLoop(): Promise<void> {
     while (!this.stopped) {
-      if (!(await this.runOnce())) await new Promise((resolve) => setTimeout(resolve, 25));
+      if (!(await this.runOnce())) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
     }
   }
   /** Bun server lifecycle hook: recovery completes before this resolves; drain continues in background. */
@@ -98,9 +104,13 @@ export class GenerationWorker {
 
   private async process(itemId: string): Promise<void> {
     const item = this.repo.getItem(itemId);
-    if (!item) return;
+    if (!item) {
+      return;
+    }
     const job = this.repo.getJob(item.jobId).job;
-    if (!job) return;
+    if (!job) {
+      return;
+    }
     const registered = this.repo
       .getFileByItem(itemId)
       .find(
@@ -124,7 +134,9 @@ export class GenerationWorker {
     } catch (error) {
       // Cancellation may win the claim-to-call boundary. In that case no
       // provider request was created, so leave the cancelled item terminal.
-      if (error instanceof Error && error.message.includes('cancelled')) return;
+      if (error instanceof Error && error.message.includes('cancelled')) {
+        return;
+      }
       throw error;
     }
     const timer = setInterval(() => this.repo.updateHeartbeat(itemId), this.heartbeatMs);
@@ -139,7 +151,9 @@ export class GenerationWorker {
         imageSize: typeof options.imageSize === 'string' ? options.imageSize : undefined,
         removeBackground: typeof options.removeBackground === 'boolean' ? options.removeBackground : undefined,
       });
-      if (!result.success || !result.imageBuffer) throw new Error(result.error ?? 'generator returned no image');
+      if (!result.success || !result.imageBuffer) {
+        throw new Error(result.error ?? 'generator returned no image');
+      }
       await mkdir(this.outputDir, { recursive: true });
       const mimeType = result.mimeType ?? 'image/png';
       const actualName = `${item.jobId}-${item.ordinal}${extension(mimeType)}`;
@@ -155,7 +169,9 @@ export class GenerationWorker {
         file: { fileName: actualName, mimeType, sizeBytes: result.imageBuffer.byteLength },
       });
     } catch (error) {
-      if (tempPath) await unlink(tempPath).catch(() => {});
+      if (tempPath) {
+        await unlink(tempPath).catch(() => {});
+      }
       this.repo.finalizeRequest({ requestId: request.id, itemId, status: 'failed', error: safeError(error) });
     } finally {
       clearInterval(timer);

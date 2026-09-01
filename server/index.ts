@@ -1,4 +1,4 @@
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { openDatabase } from '../src/db/client';
 import { createRepositories } from '../src/db/repositories';
 import { createWorker, startGenerationWorker, stopGenerationWorker } from '../src/jobs';
@@ -28,19 +28,25 @@ async function staticResponse(dist: string, pathname: string): Promise<Response>
   } catch {
     return new Response('not found', { status: 404 });
   }
-  if (decoded.includes('\0')) return new Response('not found', { status: 404 });
+  if (decoded.includes('\0')) {
+    return new Response('not found', { status: 404 });
+  }
   const requested = decoded === '/' ? '/index.html' : decoded;
   const distRoot = resolve(dist);
   const target = resolve(distRoot, `.${requested}`);
   const inDist = target === distRoot || target.startsWith(`${distRoot}/`);
   if (inDist) {
     const file = Bun.file(target);
-    if (await file.exists()) return new Response(file);
+    if (await file.exists()) {
+      return new Response(file);
+    }
   }
   // SPA fallback is restricted to extensionless frontend routes, not asset typos.
   if (requested === '/' || !requested.split('/').at(-1)?.includes('.')) {
     const fallback = Bun.file(resolve(distRoot, 'index.html'));
-    if (await fallback.exists()) return new Response(fallback);
+    if (await fallback.exists()) {
+      return new Response(fallback);
+    }
   }
   return new Response('not found', { status: 404, headers: { 'content-type': 'text/plain' } });
 }
@@ -55,7 +61,9 @@ export async function startServer(options: ServerOptions = {}) {
     port: options.port ?? Number(process.env.PORT ?? 3000),
     async fetch(req) {
       const apiResponse = await app.api(req);
-      if (new URL(req.url).pathname.startsWith('/api/') || apiResponse.status !== 404) return apiResponse;
+      if (new URL(req.url).pathname.startsWith('/api/') || apiResponse.status !== 404) {
+        return apiResponse;
+      }
       return staticResponse(dist, new URL(req.url).pathname);
     },
   });
@@ -74,4 +82,6 @@ export async function startServer(options: ServerOptions = {}) {
   return { ...app, server, shutdown };
 }
 
-if (import.meta.main) await startServer();
+if (import.meta.main) {
+  await startServer();
+}

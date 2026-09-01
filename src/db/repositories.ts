@@ -1,21 +1,21 @@
-import type { Db } from './client';
-import {
-  assets,
-  jobs,
-  items,
-  requests,
-  files,
-  events,
-  type AssetRow,
-  type JobRow,
-  type ItemRow,
-  type RequestRow,
-  type FileRow,
-  type EventRow,
-} from './schema';
-import { and, asc, desc, eq, isNull, lt, sql } from 'drizzle-orm';
-import { nowUtc } from './client';
 import { randomUUID } from 'node:crypto';
+import { and, asc, desc, eq, isNull, lt, sql } from 'drizzle-orm';
+import type { Db } from './client';
+import { nowUtc } from './client';
+import {
+  type AssetRow,
+  assets,
+  type EventRow,
+  events,
+  type FileRow,
+  files,
+  type ItemRow,
+  items,
+  type JobRow,
+  jobs,
+  type RequestRow,
+  requests,
+} from './schema';
 
 export type ItemStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 export type RequestStatus = 'running' | 'succeeded' | 'failed';
@@ -42,7 +42,9 @@ const transitionError = (message: string): never => {
   throw new Error(`invalid transition: ${message}`);
 };
 const requireRow = <T>(row: T | undefined, message: string): T => {
-  if (row === undefined) throw new Error(`invalid transition: ${message}`);
+  if (row === undefined) {
+    throw new Error(`invalid transition: ${message}`);
+  }
   return row;
 };
 
@@ -138,8 +140,9 @@ export function createRepositories(db: Db) {
             updatedAt: t,
           })
           .run();
-        for (let n = 1; n <= input.count; n++)
+        for (let n = 1; n <= input.count; n++) {
           tx.insert(items).values({ id: id(), jobId: jobId, ordinal: n, status: 'queued' }).run();
+        }
         addEvent(tx, jobId, 'job.created', undefined, `${input.count} items`);
         return tx.select().from(jobs).where(eq(jobs.id, jobId)).get()!;
       }),
@@ -162,7 +165,9 @@ export function createRepositories(db: Db) {
           .orderBy(asc(items.ordinal))
           .limit(1)
           .get();
-        if (!candidate) return;
+        if (!candidate) {
+          return;
+        }
         const t = nowUtc();
         const changed = tx
           .update(items)
@@ -180,13 +185,16 @@ export function createRepositories(db: Db) {
       db.transaction((tx) => {
         const item = tx.select().from(items).where(eq(items.id, itemId)).get();
         const existingItem = requireRow(item, `item ${itemId} not found`);
-        if (existingItem.status !== 'running')
+        if (existingItem.status !== 'running') {
           transitionError(`start request requires running item, got ${existingItem.status}`);
+        }
         const job = requireRow(
           tx.select().from(jobs).where(eq(jobs.id, existingItem.jobId)).get(),
           `job ${existingItem.jobId} not found`,
         );
-        if (job.status === 'cancelled') transitionError('start request rejected for cancelled job');
+        if (job.status === 'cancelled') {
+          transitionError('start request rejected for cancelled job');
+        }
         const previous = tx
           .select({ max: sql<number>`max(${requests.attempt})` })
           .from(requests)
@@ -201,8 +209,9 @@ export function createRepositories(db: Db) {
       db.transaction((tx) => {
         const current = tx.select().from(requests).where(eq(requests.id, requestId)).get();
         const existingRequest = requireRow(current, `request ${requestId} not found`);
-        if (existingRequest.status !== 'running')
+        if (existingRequest.status !== 'running') {
           transitionError(`finish request requires running request, got ${existingRequest.status}`);
+        }
         return tx
           .update(requests)
           .set({ status, error, finishedAt: nowUtc() })
@@ -214,8 +223,9 @@ export function createRepositories(db: Db) {
       db.transaction((tx) => {
         const current = tx.select().from(items).where(eq(items.id, itemId)).get();
         const existingItem = requireRow(current, `item ${itemId} not found`);
-        if (existingItem.status !== 'running')
+        if (existingItem.status !== 'running') {
           transitionError(`finish item requires running item, got ${existingItem.status}`);
+        }
         const row = tx
           .update(items)
           .set({ status, error, finishedAt: nowUtc(), heartbeatAt: null })
@@ -245,9 +255,12 @@ export function createRepositories(db: Db) {
           tx.select().from(items).where(eq(items.id, input.itemId)).get(),
           `item ${input.itemId} not found`,
         );
-        if (request.itemId !== input.itemId || request.status !== 'running')
+        if (request.itemId !== input.itemId || request.status !== 'running') {
           transitionError('finalize requires running request for item');
-        if (item.status !== 'running') transitionError(`finalize requires running item, got ${item.status}`);
+        }
+        if (item.status !== 'running') {
+          transitionError(`finalize requires running item, got ${item.status}`);
+        }
         const at = nowUtc();
         tx.update(requests)
           .set({ status: input.status, error: input.error, finishedAt: at })
@@ -259,17 +272,19 @@ export function createRepositories(db: Db) {
             input.file.fileName.includes('\\') ||
             input.file.fileName.startsWith('.') ||
             input.file.sizeBytes < 0
-          )
+          ) {
             throw new Error('invalid generated file');
+          }
           const registered = tx
             .select()
             .from(files)
             .where(and(eq(files.itemId, input.itemId), eq(files.fileName, input.file.fileName)))
             .get();
-          if (!registered)
+          if (!registered) {
             tx.insert(files)
               .values({ id: id(), itemId: input.itemId, ...input.file, createdAt: at })
               .run();
+          }
         }
         const itemRow = tx
           .update(items)
@@ -277,7 +292,9 @@ export function createRepositories(db: Db) {
           .where(and(eq(items.id, input.itemId), eq(items.status, 'running')))
           .returning()
           .get();
-        if (!itemRow) transitionError('item changed during finalize');
+        if (!itemRow) {
+          transitionError('item changed during finalize');
+        }
         refreshJob(tx, itemRow.jobId, at);
         addEvent(tx, itemRow.jobId, `item.${input.status}`, itemRow.id, input.error);
         return itemRow;
@@ -285,14 +302,17 @@ export function createRepositories(db: Db) {
     completeRegisteredItem: (itemId: string, fileName: string) =>
       db.transaction((tx) => {
         const item = requireRow(tx.select().from(items).where(eq(items.id, itemId)).get(), `item ${itemId} not found`);
-        if (item.status !== 'running')
+        if (item.status !== 'running') {
           transitionError(`complete registered item requires running item, got ${item.status}`);
+        }
         const registered = tx
           .select()
           .from(files)
           .where(and(eq(files.itemId, itemId), eq(files.fileName, fileName)))
           .get();
-        if (!registered) transitionError('registered file not found');
+        if (!registered) {
+          transitionError('registered file not found');
+        }
         const at = nowUtc();
         const row = tx
           .update(items)
@@ -300,7 +320,9 @@ export function createRepositories(db: Db) {
           .where(and(eq(items.id, itemId), eq(items.status, 'running')))
           .returning()
           .get();
-        if (!row) transitionError('item changed during registered completion');
+        if (!row) {
+          transitionError('item changed during registered completion');
+        }
         refreshJob(tx, row.jobId, at);
         addEvent(tx, row.jobId, 'item.succeeded', itemId, 'registered output reused');
         return row;
@@ -311,8 +333,9 @@ export function createRepositories(db: Db) {
         input.fileName.includes('\\') ||
         input.fileName.startsWith('.') ||
         input.sizeBytes < 0
-      )
+      ) {
         throw new Error('invalid generated file');
+      }
       const row = { id: id(), ...input, createdAt: nowUtc() };
       db.insert(files).values(row).run();
       return row;
@@ -337,8 +360,12 @@ export function createRepositories(db: Db) {
     cancelJob: (jobId: string) =>
       db.transaction((tx) => {
         const current = tx.select().from(jobs).where(eq(jobs.id, jobId)).get();
-        if (!current) return undefined;
-        if (!['queued', 'running'].includes(current.status)) return current;
+        if (!current) {
+          return undefined;
+        }
+        if (!['queued', 'running'].includes(current.status)) {
+          return current;
+        }
         const t = nowUtc();
         tx.update(items)
           .set({ status: 'cancelled', finishedAt: t, heartbeatAt: null })
@@ -357,7 +384,9 @@ export function createRepositories(db: Db) {
     retryFailed: (jobId: string) =>
       db.transaction((tx) => {
         const current = tx.select().from(jobs).where(eq(jobs.id, jobId)).get();
-        if (!current || current.status !== 'failed') return undefined;
+        if (current?.status !== 'failed') {
+          return undefined;
+        }
         const t = nowUtc();
         const changed = tx
           .update(items)
@@ -365,7 +394,9 @@ export function createRepositories(db: Db) {
           .where(and(eq(items.jobId, jobId), eq(items.status, 'failed')))
           .returning()
           .all();
-        if (!changed.length) return current;
+        if (!changed.length) {
+          return current;
+        }
         tx.update(jobs).set({ status: 'queued', updatedAt: t }).where(eq(jobs.id, jobId)).run();
         addEvent(tx, jobId, 'job.retry-failed');
         return tx.select().from(jobs).where(eq(jobs.id, jobId)).get();
@@ -386,7 +417,9 @@ export function createRepositories(db: Db) {
             .returning()
             .all();
           recoveredRequests.push(...running);
-          for (const request of running) addEvent(tx, item.jobId, 'request.recovered', item.id, request.id);
+          for (const request of running) {
+            addEvent(tx, item.jobId, 'request.recovered', item.id, request.id);
+          }
           tx.update(items)
             .set({ status: 'queued', startedAt: null, heartbeatAt: null })
             .where(and(eq(items.id, item.id), eq(items.status, 'running')))

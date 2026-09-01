@@ -1,5 +1,5 @@
-export type { AssetRow, JobRow, ItemRow, RequestRow, FileRow, EventRow } from './db/schema';
-export type { ItemStatus, RequestStatus, JobStatus, JobCreate, AssetReferenceSnapshot } from './db/repositories';
+export type { AssetReferenceSnapshot, ItemStatus, JobCreate, JobStatus, RequestStatus } from './db/repositories';
+export type { AssetRow, EventRow, FileRow, ItemRow, JobRow, RequestRow } from './db/schema';
 
 export interface CreateJobRequest {
   authoredPrompt: string;
