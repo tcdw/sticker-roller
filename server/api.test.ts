@@ -22,6 +22,15 @@ describe("web API", () => {
     const accepted = await api(request("POST", "/api/jobs", { prompt: "x", count: 1 })); expect(accepted.status).toBe(202); const job = await accepted.json() as { id: string };
     const api2 = createApiHandler({ repositories: repo }); expect((await api2(request("GET", `/api/jobs/${job.id}`))).status).toBe(200); db.close();
   });
+  test("creates jobs with multiple references and immutable expansion", async () => {
+    const db = await openDatabase(":memory:"); const repo = createRepositories(db.db); const api = createApiHandler({ repositories: repo });
+    const a = await (await api(request("POST", "/api/assets", { name: "A", prompt: "alpha", category: "人物", metadata: { x: 1 } }))).json() as { id: string };
+    const b = await (await api(request("POST", "/api/assets", { name: "B", prompt: "beta" }))).json() as { id: string };
+    const created = await api(request("POST", "/api/jobs", { authoredPrompt: "make", referencedAssetIds: [a.id, b.id] })); expect(created.status).toBe(202);
+    const job = await created.json() as { authoredPrompt: string; promptSnapshot: string; references: Array<{ prompt: string }> };
+    expect(job.authoredPrompt).toBe("make"); expect(job.promptSnapshot).toContain("alpha"); expect(job.promptSnapshot).toContain("beta"); expect(job.references).toHaveLength(2);
+    expect((await api(request("POST", "/api/jobs", { authoredPrompt: "bad", referencedAssetIds: [crypto.randomUUID()] }))).status).toBe(400); db.close();
+  });
   test("registered output blocks traversal and missing files", async () => {
     const db = await openDatabase(":memory:"); const repo = createRepositories(db.db); const api = createApiHandler({ repositories: repo, outputDir: "/tmp/sticker-output" });
     expect((await api(request("GET", "/api/output/..%2Fsecret.png"))).status).toBe(404);

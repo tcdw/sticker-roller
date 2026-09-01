@@ -18,9 +18,23 @@ describe("sqlite data layer", () => {
     first.close(); const second = await openDatabase(path); expect(createRepositories(second.db).getAsset(asset.id)?.prompt).toBe("hello"); second.close(); await unlink(path); await unlink(`${path}-wal`).catch(()=>{}); await unlink(`${path}-shm`).catch(()=>{});
   });
 
-  test("recovers stale running work", async () => {
+  test("snapshots multiple referenced assets independently of later edits", async () => {
     const handle = await openDatabase(":memory:"); const repo = createRepositories(handle.db);
-    const job = repo.createJob({assetName:"x",prompt:"p",options:{},count:1}); const item=repo.claimNextItem()!;
+    const first = repo.createAsset({ name: "one", prompt: "first", category: "人物", metadata: { tone: "soft" } });
+    const second = repo.createAsset({ name: "two", prompt: "second" });
+    const job = repo.createJob({ authoredPrompt: "compose", prompt: "compose\\n\\none\\nfirst\\n\\ntwo\\nsecond", referencedAssets: [
+      { id: first.id, name: first.name, prompt: first.prompt, category: first.category, metadata: JSON.parse(first.metadata) },
+      { id: second.id, name: second.name, prompt: second.prompt, category: second.category, metadata: JSON.parse(second.metadata) },
+    ], options: {}, count: 1 })!;
+    repo.updateAsset(first.id, { prompt: "edited", metadata: { tone: "loud" } });
+    const saved = repo.getJob(job.id).job!;
+    expect(saved.authoredPromptSnapshot).toBe("compose");
+    expect(JSON.parse(saved.referencesSnapshot)[0].prompt).toBe("first");
+    expect(saved.promptSnapshot).toContain("first");
+    handle.close();
+  });
+  test("recovers stale running work", async () => {
+    const handle = await openDatabase(":memory:"); const repo = createRepositories(handle.db); const job = repo.createJob({assetName:"x",prompt:"p",options:{},count:1})!; const item=repo.claimNextItem()!;
     const request = repo.startRequest(item.id);
     const recovered = repo.recoverStale(new Date(Date.now()+1000).toISOString());
     expect(recovered.items[0]?.id).toBe(item.id);

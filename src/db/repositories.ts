@@ -7,7 +7,8 @@ import { randomUUID } from "node:crypto";
 export type ItemStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 export type RequestStatus = "running" | "succeeded" | "failed";
 export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
-export interface JobCreate { assetId?: string; assetName: string; prompt: string; options: Record<string, unknown>; count: number; }
+export interface AssetReferenceSnapshot { id: string; name: string; prompt: string; category: string | null; metadata: Record<string, unknown>; }
+export interface JobCreate { assetId?: string; assetName?: string; prompt: string; authoredPrompt?: string; referencedAssets?: AssetReferenceSnapshot[]; options: Record<string, unknown>; count: number; }
 const id = () => randomUUID();
 const json = (v: unknown) => JSON.stringify(v);
 const transitionError = (message: string): never => { throw new Error(`invalid transition: ${message}`); };
@@ -30,10 +31,10 @@ export function createRepositories(db: Db) {
   return {
     listAssets: (includeArchived = false) => db.select().from(assets).where(includeArchived ? undefined : isNull(assets.archivedAt)).orderBy(asc(assets.name)).all(),
     getAsset: (assetId: string) => db.select().from(assets).where(eq(assets.id, assetId)).get(),
-    createAsset: (input: { name: string; prompt: string }) => { const t=nowUtc(), row={id:id(),name:input.name,prompt:input.prompt,createdAt:t,updatedAt:t}; db.insert(assets).values(row).run(); return row; },
-    updateAsset: (assetId: string, input: { name?: string; prompt?: string }) => { const row=db.update(assets).set({...input,updatedAt:nowUtc()}).where(eq(assets.id,assetId)).returning().get(); return row; },
+    createAsset: (input: { name: string; prompt: string; category?: string | null; metadata?: Record<string, unknown> }) => { const t=nowUtc(), row={id:id(),name:input.name,prompt:input.prompt,category:input.category ?? null,metadata:json(input.metadata ?? {}),createdAt:t,updatedAt:t}; db.insert(assets).values(row).run(); return row; },
+    updateAsset: (assetId: string, input: { name?: string; prompt?: string; category?: string | null; metadata?: Record<string, unknown> }) => { const { metadata, ...rest } = input; const values = {...rest, ...(metadata === undefined ? {} : { metadata: json(metadata) }), updatedAt: nowUtc()}; const row=db.update(assets).set(values).where(eq(assets.id,assetId)).returning().get(); return row; },
     archiveAsset: (assetId: string) => db.update(assets).set({archivedAt:nowUtc(),updatedAt:nowUtc()}).where(eq(assets.id,assetId)).returning().get(),
-    createJob: (input: JobCreate) => db.transaction((tx) => { const t=nowUtc(), jobId=id(); tx.insert(jobs).values({id:jobId,assetId:input.assetId,assetName:input.assetName,promptSnapshot:input.prompt,optionsSnapshot:json(input.options),requestedCount:input.count,status:"queued",createdAt:t,updatedAt:t}).run(); for(let n=1;n<=input.count;n++) tx.insert(items).values({id:id(),jobId:jobId,ordinal:n,status:"queued"}).run(); addEvent(tx, jobId, "job.created", undefined, `${input.count} items`); return tx.select().from(jobs).where(eq(jobs.id,jobId)).get()!; }),
+    createJob: (input: JobCreate) => db.transaction((tx) => { const t=nowUtc(), jobId=id(), refs=input.referencedAssets ?? []; tx.insert(jobs).values({id:jobId,assetId:input.assetId,assetName:input.assetName ?? (refs[0]?.name ?? "text"),authoredPromptSnapshot:input.authoredPrompt ?? input.prompt,referencesSnapshot:json(refs),promptSnapshot:input.prompt,optionsSnapshot:json(input.options),requestedCount:input.count,status:"queued",createdAt:t,updatedAt:t}).run(); for(let n=1;n<=input.count;n++) tx.insert(items).values({id:id(),jobId:jobId,ordinal:n,status:"queued"}).run(); addEvent(tx, jobId, "job.created", undefined, `${input.count} items`); return tx.select().from(jobs).where(eq(jobs.id,jobId)).get()!; }),
     getJob: (jobId: string) => ({ job: db.select().from(jobs).where(eq(jobs.id,jobId)).get(), items: db.select().from(items).where(eq(items.jobId,jobId)).orderBy(asc(items.ordinal)).all(), events: db.select().from(events).where(eq(events.jobId,jobId)).orderBy(asc(events.id)).all() }),
     getItem: (itemId: string) => db.select().from(items).where(eq(items.id,itemId)).get(),
     listRequests: (itemId: string) => db.select().from(requests).where(eq(requests.itemId,itemId)).orderBy(desc(requests.attempt)).all(),

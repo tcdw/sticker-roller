@@ -2,12 +2,7 @@
   "version": "7",
   "dialect": "sqlite",
   "entries": [
-    {
-      "idx": 0,
-      "version": "6",
-      "when": 1788267279516,
-      "tag": "0000_curly_the_stranger",
-      "breakpoints": true
-    }
+    {"idx": 0, "version": "6", "when": 1788267279516, "tag": "0000_curly_the_stranger", "breakpoints": true},
+    {"idx": 1, "version": "7", "when": 1788267279517, "tag": "0001_material_references", "breakpoints": true}
   ]
 }
