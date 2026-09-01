@@ -5,15 +5,15 @@ import { createRoot } from 'react-dom/client';
 import type { AssetRow, JobRow } from '../../src/web-types';
 import { api, isActive, type Options, referencedIdsFromPrompt, useDraft } from './api';
 import { Composer } from './components/Composer';
-import { Badge } from './components/ui/Badge';
-import { Button } from './components/ui/Button';
-import { Card } from './components/ui/Card';
-import { Checkbox } from './components/ui/Checkbox';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './components/ui/Dialog';
-import { Input } from './components/ui/Input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/Select';
-import { Textarea } from './components/ui/Textarea';
-import { TooltipProvider } from './components/ui/Tooltip';
+import { Badge } from './components/ui/badge';
+import { Button } from './components/ui/button';
+import { Card } from './components/ui/card';
+import { Checkbox } from './components/ui/checkbox';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './components/ui/dialog';
+import { Input } from './components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
+import { Textarea } from './components/ui/textarea';
+import { TooltipProvider } from './components/ui/tooltip';
 import './styles.css';
 
 const client = new QueryClient();
@@ -223,7 +223,7 @@ function MaterialDialog({
           保存素材
         </Button>
         {asset && (
-          <Button variant="danger" onClick={() => onArchive(asset.id)}>
+          <Button variant="destructive" onClick={() => onArchive(asset.id)}>
             归档素材
           </Button>
         )}

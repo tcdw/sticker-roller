@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "shadcn:add": "bunx shadcn@latest add",
     "format": "biome format --write .",
     "lint": "biome lint .",
     "check": "biome check ."

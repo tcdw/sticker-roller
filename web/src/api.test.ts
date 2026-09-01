@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
-import { referencedIdsFromPrompt, saveAsset } from './api';
 import type { AssetRow } from '../../src/web-types';
+import { referencedIdsFromPrompt, saveAsset } from './api';
+
 const body = { name: 'demo', prompt: 'a loud sticker' };
 afterEach(() => mock.restore());
 describe('saveAsset', () => {

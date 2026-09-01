@@ -1,11 +1,11 @@
 import { useRef } from 'react';
 import type { AssetRow } from '../../../src/web-types';
 import { useDraft } from '../api';
-import { Badge } from './ui/Badge';
-import { Button } from './ui/Button';
-import { Card } from './ui/Card';
-import { ScrollArea } from './ui/ScrollArea';
-import { Textarea } from './ui/Textarea';
+import { Badge } from './ui/badge';
+import { Button } from './ui/button';
+import { Card } from './ui/card';
+import { ScrollArea } from './ui/scroll-area';
+import { Textarea } from './ui/textarea';
 
 export function AssetReferenceToken({ asset, onRemove }: { asset: AssetRow; onRemove: () => void }) {
   return (
