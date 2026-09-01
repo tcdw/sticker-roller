@@ -9,5 +9,5 @@ This folder tracks the Web UI implementation using the docs-sprint develop/verif
 - [UI task](tasks/ui-001.md)
 - [Integration task](tasks/e2e-001.md)
 - [Corrected material-reference UI task](tasks/ui-002.md)
-- [UI-002 review](reviews/ui-002-1.md)
+- [UI-002 review (round 2)](reviews/ui-002-2.md)
 - [Backlog](backlog.md)
