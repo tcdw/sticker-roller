@@ -1,10 +1,12 @@
+import { join, resolve } from "node:path";
 import { openDatabase } from "../src/db/client";
 import { createRepositories } from "../src/db/repositories";
 import { createWorker, startGenerationWorker, stopGenerationWorker } from "../src/jobs";
 import { createApiHandler } from "./api";
-import { join } from "node:path";
 
-export async function createServer(options: { databasePath?: string; outputDir?: string; generator?: Parameters<typeof createWorker>[0]["generator"] } = {}) {
+type ServerOptions = { databasePath?: string; outputDir?: string; generator?: Parameters<typeof createWorker>[0]["generator"] };
+
+export async function createServer(options: ServerOptions = {}) {
   const database = await openDatabase(options.databasePath);
   const repositories = createRepositories(database.db);
   const outputDir = options.outputDir ?? process.env.OUTPUT_DIR;
@@ -13,28 +15,48 @@ export async function createServer(options: { databasePath?: string; outputDir?:
   return { database, repositories, worker, api };
 }
 
-export async function startServer() {
-  const app = await createServer();
-  void startGenerationWorker(app.worker);
-  const dist = join(import.meta.dir, "../dist");
+async function staticResponse(dist: string, pathname: string): Promise<Response> {
+  let decoded: string;
+  try { decoded = decodeURIComponent(pathname); } catch { return new Response("not found", { status: 404 }); }
+  if (decoded.includes("\0")) return new Response("not found", { status: 404 });
+  const requested = decoded === "/" ? "/index.html" : decoded;
+  const distRoot = resolve(dist);
+  const target = resolve(distRoot, `.${requested}`);
+  const inDist = target === distRoot || target.startsWith(`${distRoot}/`);
+  if (inDist) {
+    const file = Bun.file(target);
+    if (await file.exists()) return new Response(file);
+  }
+  // SPA fallback is restricted to extensionless frontend routes, not asset typos.
+  if (requested === "/" || !requested.split("/").at(-1)?.includes(".")) {
+    const fallback = Bun.file(resolve(distRoot, "index.html"));
+    if (await fallback.exists()) return new Response(fallback);
+  }
+  return new Response("Sticker Roller server is ready", { headers: { "content-type": "text/plain" } });
+}
+
+export async function startServer(options: ServerOptions = {}) {
+  const app = await createServer(options);
+  // Recovery is awaited; the loop is deliberately launched but not awaited.
+  await startGenerationWorker(app.worker);
+  const dist = resolve(import.meta.dir, "../dist");
   const server = Bun.serve({
     hostname: process.env.HOST ?? "127.0.0.1",
     port: Number(process.env.PORT ?? 3000),
     async fetch(req) {
       const apiResponse = await app.api(req);
       if (new URL(req.url).pathname.startsWith("/api/") || apiResponse.status !== 404) return apiResponse;
-      const url = new URL(req.url);
-      const requested = url.pathname === "/" ? "/index.html" : url.pathname;
-      const file = Bun.file(join(dist, requested));
-      if (await file.exists()) return new Response(file);
-      const fallback = Bun.file(join(dist, "index.html"));
-      return await fallback.exists() ? new Response(fallback) : new Response("Sticker Roller server is ready", { headers: { "content-type": "text/plain" } });
+      return staticResponse(dist, new URL(req.url).pathname);
     },
   });
-  const shutdown = () => { stopGenerationWorker(app.worker); app.database.close(); server.stop(); };
+  let shuttingDown: Promise<void> | undefined;
+  const shutdown = () => {
+    shuttingDown ??= (async () => { await stopGenerationWorker(app.worker); server.stop(); app.database.close(); })();
+    return shuttingDown;
+  };
   process.once("SIGINT", shutdown); process.once("SIGTERM", shutdown);
   console.log(`Sticker Roller listening on http://${server.hostname}:${server.port}`);
-  return { ...app, server };
+  return { ...app, server, shutdown };
 }
 
 if (import.meta.main) await startServer();

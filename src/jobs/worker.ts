@@ -21,10 +21,26 @@ export class GenerationWorker {
   recover(): void { this.repo.recoverStale(new Date(Date.now() - this.staleAfterMs).toISOString()); }
   async runOnce(): Promise<boolean> { if (this.stopped || this.active) return false; const item = this.repo.claimNextItem(); if (!item) return false; this.active = this.process(item.id).finally(() => { this.active = undefined; }); await this.active; return true; }
   async drain(): Promise<void> { while (await this.runOnce()) {} }
-  /** Bun server lifecycle hook: call after database initialization; browser lifecycle is irrelevant. */
-  start(): Promise<void> { this.stopped = false; this.recover(); this.loop ??= this.drain().finally(() => { this.loop = undefined; }); return this.loop; }
-  /** Bun server shutdown hook. Await the promise returned by start() if graceful drain is required. */
-  stop(): void { this.stopped = true; }
+  private async runLoop(): Promise<void> {
+    while (!this.stopped) {
+      if (!(await this.runOnce())) await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+  /** Bun server lifecycle hook: recovery completes before this resolves; drain continues in background. */
+  start(): Promise<void> {
+    this.stopped = false;
+    this.recover();
+    this.loop ??= this.runLoop().catch((error) => {
+      console.error("generation worker stopped unexpectedly", error);
+    }).finally(() => { this.loop = undefined; });
+    return Promise.resolve();
+  }
+  /** Stop accepting work and wait for the active provider call and drain loop. */
+  async stop(): Promise<void> {
+    this.stopped = true;
+    await this.active;
+    await this.loop;
+  }
 
   private async process(itemId: string): Promise<void> {
     const item = this.repo.getItem(itemId); if (!item) return; const job = this.repo.getJob(item.jobId).job; if (!job) return;
@@ -47,6 +63,6 @@ export class GenerationWorker {
   }
 }
 export function createWorker(options: WorkerOptions): GenerationWorker { return new GenerationWorker(options); }
-/** Application integration contract for Bun: initialize repositories, then call worker.start(); call worker.stop() during shutdown. */
+/** Application integration contract for Bun: initialize repositories, await worker.start(), then listen; await worker.stop() during shutdown. */
 export function startGenerationWorker(worker: GenerationWorker): Promise<void> { return worker.start(); }
-export function stopGenerationWorker(worker: GenerationWorker): void { worker.stop(); }
+export function stopGenerationWorker(worker: GenerationWorker): Promise<void> { return worker.stop(); }

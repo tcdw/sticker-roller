@@ -32,7 +32,7 @@ Browser ──HTTP──> Bun API ──transaction──> SQLite
 - The worker claims queued items from SQLite and updates heartbeat/progress.
 - SQLite is the source of truth after refresh or server restart.
 - Startup recovery marks stale running provider requests as `failed` with an interruption error, requeues their running items, recomputes the related job, and records recovery events.
-- The Bun server lifecycle must call `startGenerationWorker(worker)` after repositories/database initialization and `stopGenerationWorker(worker)` during shutdown. `start()` performs stale recovery before its continuous drain loop; worker execution is independent of browser connections.
+- The Bun server lifecycle must await `startGenerationWorker(worker)` after repositories/database initialization and await `stopGenerationWorker(worker)` before closing the database during shutdown. `start()` performs stale recovery before launching its continuous drain loop; the drain loop is intentionally non-blocking for server startup, while worker failures are contained and surfaced. Worker execution is independent of browser connections.
 - Item heartbeat is the lease contract for both the worker item and its active LLM request; requests do not have a separate heartbeat column. The worker refreshes it while the provider call is active.
 - Job status is derived transactionally from item states: any running item means `running`; otherwise any queued item means `queued`; once all items are terminal, any failed item means `failed`, otherwise cancelled items mean `cancelled`, and otherwise the job is `succeeded`.
 - Output files are server-owned and exposed only through registered database records; the registry can be queried by file name and associated item/job.
