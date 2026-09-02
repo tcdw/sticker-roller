@@ -10,5 +10,6 @@ This folder tracks the Web UI implementation using the docs-sprint develop/verif
 - [Integration task](tasks/e2e-001.md)
 - [Corrected material-reference UI task](tasks/ui-002.md)
 - [shadcn-001 task](tasks/shadcn-001.md)
-- [shadcn-001 review](reviews/shadcn-001-3.md)
+- [shadcn-002 task](tasks/shadcn-002.md)
+- [shadcn-002 review](reviews/shadcn-002-1.md)
 - [Backlog](backlog.md)
