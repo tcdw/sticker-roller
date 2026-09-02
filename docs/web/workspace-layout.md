@@ -4,7 +4,9 @@ Status: Approved correction
 
 ## Design Principles
 
-The workspace follows the supplied prototype: a large left materials rail and a wide right task canvas. Materials are reusable references inserted into the prompt; the prompt composer is the task itself.
+The workspace follows the supplied information architecture: a left materials rail and a wide right task canvas. Materials are reusable references inserted into the prompt; the prompt composer is the task itself.
+
+Visual styling uses the standard shadcn/ui design language and generated Tailwind utility classes. The old bespoke visual language, custom `ui-*` classes, colored hard-coded theme, thick borders, hand-built shadows, and remote font imports are explicitly not part of the approved design.
 
 ## Overall Structure
 
@@ -34,9 +36,9 @@ The workspace follows the supplied prototype: a large left materials rail and a 
 
 ## Page-Level Layout
 
-- Full viewport canvas with a thin dark outer frame.
+- Full viewport application shell using standard shadcn background, border, spacing, radius and typography tokens.
 - Header title at the upper left: `生图工作室`.
-- Main area uses a narrow sidebar (about 19–21% width) and a flexible task area.
+- Main area uses a standard bordered sidebar (about 19–21% width) and a flexible task area.
 - Sidebar is a scrollable materials browser.
 - Task area is a vertical stack: prompt composer, generation toolbar, task history/results.
 
@@ -130,3 +132,7 @@ App
 ## Page Entry Points
 
 - `/`: the workbench shown in the supplied prototype.
+
+## Implementation Constraint
+
+The UI must use generated shadcn/ui primitives plus standard Tailwind utilities and shadcn semantic variables. Do not add a project-specific stylesheet that recreates Button, Card, Dialog, Select, Badge, Input, Textarea, ScrollArea, Tooltip, Checkbox, layout surfaces, or status styling. The only global CSS entry is the minimal shadcn/Tailwind theme file (`globals.css`).
