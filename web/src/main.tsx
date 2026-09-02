@@ -1,11 +1,11 @@
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createRootRoute, createRoute, createRouter, Outlet, RouterProvider } from '@tanstack/react-router';
-import { Download, ImagePlus, RefreshCw, Settings2 } from 'lucide-react';
-import React, { useState } from 'react';
+import { Download, ImagePlus, Library, RefreshCw, Settings2 } from 'lucide-react';
+import React, { useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { AssetRow, JobRow } from '../../src/web-types';
 import { api, isActive, type Options, referencedIdsFromPrompt, useDraft } from './api';
-import { Composer } from './components/Composer';
+import { MaterialsSidebar, PromptComposer } from './components/Composer';
 import { Alert, AlertDescription, AlertTitle } from './components/ui/alert';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
@@ -23,6 +23,7 @@ import { Input } from './components/ui/input';
 import { Progress } from './components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
 import { Separator } from './components/ui/separator';
+import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from './components/ui/sheet';
 import { Skeleton } from './components/ui/skeleton';
 import { Textarea } from './components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip';
@@ -49,6 +50,8 @@ function Workspace() {
   });
   const [dialog, setDialog] = useState<'create' | AssetRow | null>(null);
   const [params, setParams] = useState(false);
+  const [materialsOpen, setMaterialsOpen] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [notice, setNotice] = useState('');
   const save = useMutation({
     mutationFn: ({ id, body }: { id?: string; body: { name: string; prompt: string; category: string } }) =>
@@ -89,6 +92,22 @@ function Workspace() {
     assets.refetch();
     jobs.refetch();
   };
+  const insertAsset = (asset: AssetRow, closeDrawer = false) => {
+    const element = textareaRef.current;
+    const start = element?.selectionStart ?? draft.prompt.length;
+    const end = element?.selectionEnd ?? start;
+    const token = `@[${asset.name}](asset:${asset.id})`;
+    const prompt = `${draft.prompt.slice(0, start) + token} ${draft.prompt.slice(end)}`;
+    draft.set({ prompt, referencedAssetIds: [...new Set([...draft.referencedAssetIds, asset.id])] });
+    if (closeDrawer) {
+      setMaterialsOpen(false);
+    }
+    requestAnimationFrame(() => {
+      element?.focus();
+      const position = start + token.length + 1;
+      element?.setSelectionRange(position, position);
+    });
+  };
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -105,94 +124,131 @@ function Workspace() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-screen-2xl space-y-6 p-4 sm:p-6">
-        {loadError && (
-          <Alert variant="destructive">
-            <AlertTitle>加载失败</AlertTitle>
-            <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
-              <span>{(loadError as Error).message}</span>
-              <Button type="button" variant="outline" size="sm" onClick={refresh}>
-                重试
+      <main className="mx-auto grid max-w-screen-2xl gap-6 p-4 sm:p-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
+        <aside className="hidden lg:block">
+          <MaterialsSidebar
+            assets={assets.data ?? []}
+            loading={assets.isLoading}
+            onCreate={() => setDialog('create')}
+            onEdit={(asset) => setDialog(asset)}
+            onSelect={insertAsset}
+            className="sticky top-20 h-[calc(100vh-6.5rem)] min-w-0"
+          />
+        </aside>
+
+        <section className="min-w-0 space-y-6" aria-label="任务画布">
+          <div className="lg:hidden">
+            <Sheet open={materialsOpen} onOpenChange={setMaterialsOpen}>
+              <SheetTrigger asChild>
+                <Button type="button" variant="outline" className="w-full sm:w-auto">
+                  <Library />
+                  我的素材
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-[min(24rem,90vw)] p-0">
+                <SheetTitle className="sr-only">我的素材</SheetTitle>
+                <SheetDescription className="sr-only">从素材库选择素材并插入当前任务</SheetDescription>
+                <MaterialsSidebar
+                  assets={assets.data ?? []}
+                  loading={assets.isLoading}
+                  onCreate={() => {
+                    setMaterialsOpen(false);
+                    setDialog('create');
+                  }}
+                  onEdit={(asset) => {
+                    setMaterialsOpen(false);
+                    setDialog(asset);
+                  }}
+                  onSelect={(asset) => insertAsset(asset, true)}
+                  className="h-full rounded-none border-0 shadow-none"
+                />
+              </SheetContent>
+            </Sheet>
+          </div>
+
+          {loadError && (
+            <Alert variant="destructive">
+              <AlertTitle>加载失败</AlertTitle>
+              <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+                <span>{(loadError as Error).message}</span>
+                <Button type="button" variant="outline" size="sm" onClick={refresh}>
+                  重试
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <PromptComposer assets={assets.data ?? []} loading={assets.isLoading} textareaRef={textareaRef} />
+
+          <Card>
+            <CardContent className="flex flex-wrap items-center gap-3 p-4">
+              <Select
+                disabled={loading}
+                value={draft.options.model}
+                onValueChange={(model) => draft.set({ options: { ...draft.options, model } })}
+              >
+                <SelectTrigger className="w-full sm:w-60" aria-label="生成模型">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="gemini-3-pro-image">gemini-3-pro-image</SelectItem>
+                  <SelectItem value="gemini-3.1-flash-image-preview">gemini-3.1-flash-image-preview</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                disabled={loading}
+                value={`${draft.options.aspectRatio} / ${draft.options.imageSize}`}
+                onValueChange={(value) => {
+                  const [aspectRatio, imageSize] = value.split(' / ');
+                  if (aspectRatio && imageSize) {
+                    draft.set({ options: { ...draft.options, aspectRatio, imageSize } });
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full sm:w-40" aria-label="图片比例和尺寸">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1:1 / 1K">1:1 / 1K</SelectItem>
+                  <SelectItem value="1:1 / 2K">1:1 / 2K</SelectItem>
+                  <SelectItem value="16:9 / 2K">16:9 / 2K</SelectItem>
+                  <SelectItem value="9:16 / 2K">9:16 / 2K</SelectItem>
+                </SelectContent>
+              </Select>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="w-full sm:w-auto">
+                    <Button type="button" variant="outline" className="w-full" disabled>
+                      <ImagePlus />
+                      添加图片
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>Phase 1 仅支持文本素材</TooltipContent>
+              </Tooltip>
+              <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setParams(true)}>
+                <Settings2 />
+                更多参数
               </Button>
-            </AlertDescription>
-          </Alert>
-        )}
+              <Button
+                type="button"
+                className="w-full sm:ml-auto sm:w-auto"
+                disabled={submit.isPending || !draft.prompt.trim()}
+                onClick={() => submit.mutate()}
+              >
+                {submit.isPending ? '提交中…' : `提交任务 · ${draft.options.count} 张`}
+              </Button>
+            </CardContent>
+          </Card>
 
-        <Composer
-          assets={assets.data ?? []}
-          loading={assets.isLoading}
-          onCreate={() => setDialog('create')}
-          onEdit={(asset) => setDialog(asset)}
-        />
-
-        <Card>
-          <CardContent className="flex flex-wrap items-center gap-3 p-4">
-            <Select
-              disabled={loading}
-              value={draft.options.model}
-              onValueChange={(model) => draft.set({ options: { ...draft.options, model } })}
-            >
-              <SelectTrigger className="w-full sm:w-60" aria-label="生成模型">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="gemini-3-pro-image">gemini-3-pro-image</SelectItem>
-                <SelectItem value="gemini-3.1-flash-image-preview">gemini-3.1-flash-image-preview</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select
-              disabled={loading}
-              value={`${draft.options.aspectRatio} / ${draft.options.imageSize}`}
-              onValueChange={(value) => {
-                const [aspectRatio, imageSize] = value.split(' / ');
-                if (aspectRatio && imageSize) {
-                  draft.set({ options: { ...draft.options, aspectRatio, imageSize } });
-                }
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-40" aria-label="图片比例和尺寸">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1:1 / 1K">1:1 / 1K</SelectItem>
-                <SelectItem value="1:1 / 2K">1:1 / 2K</SelectItem>
-                <SelectItem value="16:9 / 2K">16:9 / 2K</SelectItem>
-                <SelectItem value="9:16 / 2K">9:16 / 2K</SelectItem>
-              </SelectContent>
-            </Select>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="w-full sm:w-auto">
-                  <Button type="button" variant="outline" className="w-full" disabled>
-                    <ImagePlus />
-                    添加图片
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>Phase 1 仅支持文本素材</TooltipContent>
-            </Tooltip>
-            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setParams(true)}>
-              <Settings2 />
-              更多参数
-            </Button>
-            <Button
-              type="button"
-              className="w-full sm:ml-auto sm:w-auto"
-              disabled={submit.isPending || !draft.prompt.trim()}
-              onClick={() => submit.mutate()}
-            >
-              {submit.isPending ? '提交中…' : `提交任务 · ${draft.options.count} 张`}
-            </Button>
-          </CardContent>
-        </Card>
-
-        {notice && (
-          <Alert>
-            <AlertTitle>操作结果</AlertTitle>
-            <AlertDescription>{notice}</AlertDescription>
-          </Alert>
-        )}
-        <History jobs={jobs.data ?? []} loading={jobs.isLoading} />
+          {notice && (
+            <Alert>
+              <AlertTitle>操作结果</AlertTitle>
+              <AlertDescription>{notice}</AlertDescription>
+            </Alert>
+          )}
+          <History jobs={jobs.data ?? []} loading={jobs.isLoading} />
+        </section>
       </main>
 
       <MaterialDialog
