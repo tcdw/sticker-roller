@@ -1,15 +1,8 @@
 import { stat } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
-import {
-  DEFAULT_ASPECT_RATIO,
-  DEFAULT_IMAGE_SIZE,
-  DEFAULT_MODEL,
-  DEFAULT_REMOVE_BACKGROUND,
-  SUPPORTED_ASPECT_RATIOS,
-  SUPPORTED_IMAGE_SIZES,
-  SUPPORTED_MODELS,
-} from '../src/config';
+import { DEFAULT_MODEL, DEFAULT_REMOVE_BACKGROUND, SUPPORTED_MODELS } from '../src/config';
 import type { Repositories } from '../src/db/repositories';
+import { AUTO, isSupportedAspectRatio, isSupportedImageSize } from '../src/image-options';
 
 const idPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_PROMPT = 10000;
@@ -79,24 +72,34 @@ function publicJobs(repo: Repositories, limit: number, offset: number) {
 
 function validateOptions(input: Record<string, unknown>) {
   const options: Record<string, unknown> = {};
-  const model = input.model ?? DEFAULT_MODEL,
-    aspectRatio = input.aspectRatio ?? DEFAULT_ASPECT_RATIO,
-    imageSize = input.imageSize ?? DEFAULT_IMAGE_SIZE;
+  const model = input.model ?? DEFAULT_MODEL;
   if (typeof model !== 'string' || !SUPPORTED_MODELS.includes(model)) {
     throw new InputError('invalid model');
   }
-  if (typeof aspectRatio !== 'string' || !SUPPORTED_ASPECT_RATIOS.includes(aspectRatio)) {
-    throw new InputError('invalid aspectRatio');
+  const aspectRatio = input.aspectRatio;
+  if (
+    aspectRatio !== undefined &&
+    (typeof aspectRatio !== 'string' || (aspectRatio !== AUTO && !isSupportedAspectRatio(model, aspectRatio)))
+  ) {
+    throw new InputError('invalid aspectRatio for model');
   }
-  if (typeof imageSize !== 'string' || !SUPPORTED_IMAGE_SIZES.includes(imageSize)) {
-    throw new InputError('invalid imageSize');
+  const imageSize = input.imageSize;
+  if (
+    imageSize !== undefined &&
+    (typeof imageSize !== 'string' || (imageSize !== AUTO && !isSupportedImageSize(model, imageSize)))
+  ) {
+    throw new InputError('invalid imageSize for model');
   }
   if (input.removeBackground !== undefined && typeof input.removeBackground !== 'boolean') {
     throw new InputError('invalid removeBackground');
   }
   options.model = model;
-  options.aspectRatio = aspectRatio;
-  options.imageSize = imageSize;
+  if (aspectRatio !== undefined && aspectRatio !== AUTO) {
+    options.aspectRatio = aspectRatio;
+  }
+  if (imageSize !== undefined && imageSize !== AUTO) {
+    options.imageSize = imageSize;
+  }
   options.removeBackground = input.removeBackground ?? DEFAULT_REMOVE_BACKGROUND;
   return options;
 }

@@ -11,6 +11,7 @@ import {
   DEFAULT_REMOVE_BACKGROUND,
   type StickerConfig,
 } from './config';
+import { buildProviderImageConfig } from './image-options';
 
 const OUTPUT_DIR = join(import.meta.dir, '..', 'output');
 
@@ -153,8 +154,9 @@ export interface SingleImageResult {
 export async function generateSingleImage(
   options: Omit<GenerateOptions, 'count' | 'onProgress'>,
 ): Promise<SingleImageResult> {
-  const aspectRatio = options.aspectRatio || options.sticker.aspectRatio || DEFAULT_ASPECT_RATIO;
-  const imageSize = options.imageSize || options.sticker.imageSize || DEFAULT_IMAGE_SIZE;
+  const aspectRatio = options.aspectRatio ?? options.sticker.aspectRatio;
+  const imageSize = options.imageSize ?? options.sticker.imageSize;
+  const imageConfig = buildProviderImageConfig({ aspectRatio, imageSize });
   const doRemoveBg = resolveRemoveBackground(options as GenerateOptions);
   try {
     const content: Array<{ type: 'text'; text: string } | { type: 'image'; image: string; mimeType: string }> = [];
@@ -168,11 +170,13 @@ export async function generateSingleImage(
     const result = await generateText({
       model: createProvider()(getModelId(options.model)),
       messages: [{ role: 'user', content }],
-      providerOptions: {
-        google: {
-          imageConfig: { aspectRatio: aspectRatio as ImageConfigAspectRatio, imageSize: imageSize as ImageConfigSize },
-        },
-      },
+      providerOptions: Object.keys(imageConfig).length
+        ? {
+            google: {
+              imageConfig: imageConfig as { aspectRatio?: ImageConfigAspectRatio; imageSize?: ImageConfigSize },
+            },
+          }
+        : undefined,
     });
     const file = result.files?.find((candidate) => candidate.mediaType?.startsWith('image/'));
     if (!file) {

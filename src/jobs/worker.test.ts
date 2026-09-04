@@ -29,6 +29,38 @@ describe('durable generation worker', () => {
     db.close();
   });
 
+  test('forwards only explicitly stored image options to the generator', async () => {
+    const db = await openDatabase(':memory:');
+    const repo = createRepositories(db.db);
+    repo.createJob({
+      assetName: 'automatic',
+      prompt: 'p',
+      options: { model: 'gemini-3-pro-image' },
+      count: 1,
+    });
+    repo.createJob({
+      assetName: 'explicit',
+      prompt: 'p',
+      options: { model: 'gemini-3-pro-image', aspectRatio: '16:9', imageSize: '2K' },
+      count: 1,
+    });
+    const calls: Array<{ aspectRatio?: string; imageSize?: string }> = [];
+    await createWorker({
+      repositories: repo,
+      outputDir: `/tmp/sticker-worker-${crypto.randomUUID()}`,
+      generator: async (input) => {
+        calls.push({ aspectRatio: input.aspectRatio, imageSize: input.imageSize });
+        return { success: true, imageBuffer: Buffer.from('x'), mimeType: 'image/png' };
+      },
+    }).drain();
+
+    expect(calls).toEqual([
+      { aspectRatio: undefined, imageSize: undefined },
+      { aspectRatio: '16:9', imageSize: '2K' },
+    ]);
+    db.close();
+  });
+
   test('queued cancellation is honored', async () => {
     const db = await openDatabase(':memory:');
     const repo = createRepositories(db.db);

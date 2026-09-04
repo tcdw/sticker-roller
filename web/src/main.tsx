@@ -3,6 +3,13 @@ import { createRootRoute, createRoute, createRouter, Outlet, RouterProvider } fr
 import { Download, ImagePlus, Library, RefreshCw, Settings2 } from 'lucide-react';
 import React, { useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import {
+  AUTO,
+  getModelCapabilities,
+  resolveAspectRatio,
+  resolveImageSize,
+  SUPPORTED_MODELS,
+} from '../../src/image-options';
 import type { AssetRow, JobRow } from '../../src/web-types';
 import { api, isActive, type Options, referencedIdsFromPrompt, useDraft } from './api';
 import { MaterialsSidebar, PromptComposer } from './components/Composer';
@@ -53,6 +60,7 @@ function Workspace() {
   const [materialsOpen, setMaterialsOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [notice, setNotice] = useState('');
+  const modelCapabilities = getModelCapabilities(draft.options.model);
   const save = useMutation({
     mutationFn: ({ id, body }: { id?: string; body: { name: string; prompt: string; category: string } }) =>
       id ? api.updateAsset(id, body) : api.createAsset(body),
@@ -185,34 +193,60 @@ function Workspace() {
               <Select
                 disabled={loading}
                 value={draft.options.model}
-                onValueChange={(model) => draft.set({ options: { ...draft.options, model } })}
+                onValueChange={(model) =>
+                  draft.set({
+                    options: {
+                      ...draft.options,
+                      model,
+                      aspectRatio: resolveAspectRatio(model, draft.options.aspectRatio),
+                      imageSize: resolveImageSize(model, draft.options.imageSize),
+                    },
+                  })
+                }
               >
                 <SelectTrigger className="w-full sm:w-60" aria-label="生成模型">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="gemini-3-pro-image">gemini-3-pro-image</SelectItem>
-                  <SelectItem value="gemini-3.1-flash-image-preview">gemini-3.1-flash-image-preview</SelectItem>
+                  {SUPPORTED_MODELS.map((model) => (
+                    <SelectItem key={model} value={model}>
+                      {model}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               <Select
                 disabled={loading}
-                value={`${draft.options.aspectRatio} / ${draft.options.imageSize}`}
-                onValueChange={(value) => {
-                  const [aspectRatio, imageSize] = value.split(' / ');
-                  if (aspectRatio && imageSize) {
-                    draft.set({ options: { ...draft.options, aspectRatio, imageSize } });
-                  }
-                }}
+                value={draft.options.aspectRatio}
+                onValueChange={(aspectRatio) => draft.set({ options: { ...draft.options, aspectRatio } })}
               >
-                <SelectTrigger className="w-full sm:w-40" aria-label="图片比例和尺寸">
-                  <SelectValue />
+                <SelectTrigger className="w-full sm:w-40" aria-label="图片比例">
+                  <SelectValue placeholder="图片比例" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="1:1 / 1K">1:1 / 1K</SelectItem>
-                  <SelectItem value="1:1 / 2K">1:1 / 2K</SelectItem>
-                  <SelectItem value="16:9 / 2K">16:9 / 2K</SelectItem>
-                  <SelectItem value="9:16 / 2K">9:16 / 2K</SelectItem>
+                  <SelectItem value={AUTO}>auto（不指定）</SelectItem>
+                  {modelCapabilities.aspectRatios.map((aspectRatio) => (
+                    <SelectItem key={aspectRatio} value={aspectRatio}>
+                      {aspectRatio}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                disabled={loading}
+                value={draft.options.imageSize}
+                onValueChange={(imageSize) => draft.set({ options: { ...draft.options, imageSize } })}
+              >
+                <SelectTrigger className="w-full sm:w-40" aria-label="图片分辨率">
+                  <SelectValue placeholder="图片分辨率" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={AUTO}>auto（不指定）</SelectItem>
+                  {modelCapabilities.imageSizes.map((imageSize) => (
+                    <SelectItem key={imageSize} value={imageSize}>
+                      {imageSize}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               <Tooltip>

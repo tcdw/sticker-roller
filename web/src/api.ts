@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { AUTO, DEFAULT_MODEL } from '../../src/image-options';
 import type { AssetRow, FileRow, ItemRow, JobRow } from '../../src/web-types';
 export type Job = JobRow & {
   options: Record<string, unknown>;
@@ -15,9 +16,9 @@ export type Options = {
   count: number;
 };
 const defaults: Options = {
-  model: 'gemini-3-pro-image',
-  aspectRatio: '1:1',
-  imageSize: '1K',
+  model: DEFAULT_MODEL,
+  aspectRatio: AUTO,
+  imageSize: AUTO,
   removeBackground: true,
   count: 1,
 };

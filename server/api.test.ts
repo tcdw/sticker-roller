@@ -37,6 +37,66 @@ describe('web API', () => {
     expect((await api2(request('GET', `/api/jobs/${job.id}`))).status).toBe(200);
     db.close();
   });
+  test('stores automatic image options as unspecified and preserves explicit values', async () => {
+    const db = await openDatabase(':memory:');
+    const repo = createRepositories(db.db);
+    const api = createApiHandler({ repositories: repo });
+
+    const automatic = await api(
+      request('POST', '/api/jobs', {
+        prompt: 'automatic',
+        model: 'gemini-3-pro-image',
+        aspectRatio: 'auto',
+        imageSize: 'auto',
+      }),
+    );
+    expect(automatic.status).toBe(202);
+    expect((await automatic.json()).options).toEqual({
+      model: 'gemini-3-pro-image',
+      removeBackground: true,
+    });
+
+    const explicit = await api(
+      request('POST', '/api/jobs', {
+        prompt: 'explicit',
+        model: 'gemini-3-pro-image',
+        aspectRatio: '16:9',
+        imageSize: '2K',
+      }),
+    );
+    expect(explicit.status).toBe(202);
+    expect((await explicit.json()).options).toEqual({
+      model: 'gemini-3-pro-image',
+      aspectRatio: '16:9',
+      imageSize: '2K',
+      removeBackground: true,
+    });
+
+    expect(
+      (
+        await api(
+          request('POST', '/api/jobs', {
+            prompt: 'invalid ratio',
+            model: 'gemini-3-pro-image',
+            aspectRatio: '2:1',
+          }),
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await api(
+          request('POST', '/api/jobs', {
+            prompt: 'invalid size',
+            model: 'gemini-3-pro-image',
+            imageSize: '8K',
+          }),
+        )
+      ).status,
+    ).toBe(400);
+    db.close();
+  });
+
   test('creates jobs with multiple references and immutable expansion', async () => {
     const db = await openDatabase(':memory:');
     const repo = createRepositories(db.db);
