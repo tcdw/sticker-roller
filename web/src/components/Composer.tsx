@@ -178,11 +178,13 @@ export function PromptComposer({
           placeholder="输入任务 prompt，再从素材库插入 @素材引用…"
           aria-label="任务 prompt"
         />
-        <div className="flex min-h-7 flex-wrap gap-2">
-          {mentioned.map((asset) => (
-            <AssetReferenceToken key={asset.id} asset={asset} onRemove={() => removeToken(asset)} />
-          ))}
-        </div>
+        {mentioned?.length ? (
+          <div className="flex min-h-7 flex-wrap gap-2">
+            {mentioned.map((asset) => (
+              <AssetReferenceToken key={asset.id} asset={asset} onRemove={() => removeToken(asset)} />
+            ))}
+          </div>
+        ) : null}
         <Tooltip>
           <TooltipTrigger asChild>
             <p className="w-fit text-xs text-muted-foreground">引用会在提交时解析并保存快照</p>
