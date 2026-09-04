@@ -15,17 +15,27 @@ import {
   jobs,
   type RequestRow,
   requests,
+  type UploadRow,
+  type UploadSummary,
+  uploads,
 } from './schema';
 
 export type ItemStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 export type RequestStatus = 'running' | 'succeeded' | 'failed';
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 export interface AssetReferenceSnapshot {
+  kind?: 'text';
   id: string;
   name: string;
   prompt: string;
   category: string | null;
   metadata: Record<string, unknown>;
+}
+export interface ImageReferenceSnapshot {
+  kind: 'image';
+  id: string;
+  name: string;
+  mimeType: string;
 }
 export interface JobCreate {
   assetId?: string;
@@ -33,6 +43,7 @@ export interface JobCreate {
   prompt: string;
   authoredPrompt?: string;
   referencedAssets?: AssetReferenceSnapshot[];
+  referencedImages?: ImageReferenceSnapshot[];
   options: Record<string, unknown>;
   count: number;
 }
@@ -120,16 +131,65 @@ export function createRepositories(db: Db) {
         .where(eq(assets.id, assetId))
         .returning()
         .get(),
+    createUpload: (input: { name: string; mimeType: string; sizeBytes: number; data: string }): UploadSummary => {
+      const t = nowUtc(),
+        row = {
+          id: id(),
+          name: input.name,
+          mimeType: input.mimeType,
+          sizeBytes: input.sizeBytes,
+          data: input.data,
+          archivedAt: null,
+          createdAt: t,
+          updatedAt: t,
+        };
+      db.insert(uploads).values(row).run();
+      const { data: _data, ...summary } = row;
+      return summary;
+    },
+    listUploads: (includeArchived = false): UploadSummary[] =>
+      db
+        .select({
+          id: uploads.id,
+          name: uploads.name,
+          mimeType: uploads.mimeType,
+          sizeBytes: uploads.sizeBytes,
+          archivedAt: uploads.archivedAt,
+          createdAt: uploads.createdAt,
+          updatedAt: uploads.updatedAt,
+        })
+        .from(uploads)
+        .where(includeArchived ? undefined : isNull(uploads.archivedAt))
+        .orderBy(desc(uploads.createdAt))
+        .all(),
+    getUpload: (uploadId: string): UploadRow | undefined =>
+      db.select().from(uploads).where(eq(uploads.id, uploadId)).get(),
+    archiveUpload: (uploadId: string): UploadSummary | undefined => {
+      const row = db
+        .update(uploads)
+        .set({ archivedAt: nowUtc(), updatedAt: nowUtc() })
+        .where(eq(uploads.id, uploadId))
+        .returning()
+        .get();
+      if (!row) {
+        return undefined;
+      }
+      const { data: _data, ...summary } = row;
+      return summary;
+    },
     createJob: (input: JobCreate) =>
       db.transaction((tx) => {
         const t = nowUtc(),
           jobId = id(),
-          refs = input.referencedAssets ?? [];
+          refs = [
+            ...(input.referencedAssets ?? []).map((ref) => ({ ...ref, kind: 'text' as const })),
+            ...(input.referencedImages ?? []),
+          ];
         tx.insert(jobs)
           .values({
             id: jobId,
             assetId: input.assetId,
-            assetName: input.assetName ?? refs[0]?.name ?? 'text',
+            assetName: input.assetName ?? refs.find((ref) => ref.kind === 'text')?.name ?? 'text',
             authoredPromptSnapshot: input.authoredPrompt ?? input.prompt,
             referencesSnapshot: json(refs),
             promptSnapshot: input.prompt,
@@ -445,4 +505,5 @@ export type Records = {
   RequestRow: RequestRow;
   FileRow: FileRow;
   EventRow: EventRow;
+  UploadRow: UploadRow;
 };

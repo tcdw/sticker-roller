@@ -10,8 +10,8 @@ import {
   resolveImageSize,
   SUPPORTED_MODELS,
 } from '../../src/image-options';
-import type { AssetRow, JobRow } from '../../src/web-types';
-import { api, isActive, type Options, referencedIdsFromPrompt, useDraft } from './api';
+import type { AssetRow, JobRow, UploadSummary } from '../../src/web-types';
+import { api, isActive, type Options, referencedIdsFromPrompt, referencedImageIdsFromPrompt, useDraft } from './api';
 import { MaterialsSidebar, PromptComposer } from './components/Composer';
 import { Alert, AlertDescription, AlertTitle } from './components/ui/alert';
 import { Badge } from './components/ui/badge';
@@ -33,7 +33,7 @@ import { Separator } from './components/ui/separator';
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from './components/ui/sheet';
 import { Skeleton } from './components/ui/skeleton';
 import { Textarea } from './components/ui/textarea';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip';
+import { TooltipProvider } from './components/ui/tooltip';
 import './globals.css';
 
 const client = new QueryClient();
@@ -50,6 +50,7 @@ function Workspace() {
   const qc = useQueryClient();
   const draft = useDraft();
   const assets = useQuery({ queryKey: ['assets'], queryFn: api.assets });
+  const uploads = useQuery({ queryKey: ['uploads'], queryFn: api.uploads });
   const jobs = useQuery({
     queryKey: ['jobs'],
     queryFn: api.jobs,
@@ -59,8 +60,42 @@ function Workspace() {
   const [params, setParams] = useState(false);
   const [materialsOpen, setMaterialsOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState('');
   const modelCapabilities = getModelCapabilities(draft.options.model);
+  const insertAsset = (asset: AssetRow, closeDrawer = false) => {
+    const element = textareaRef.current;
+    const start = element?.selectionStart ?? draft.prompt.length;
+    const end = element?.selectionEnd ?? start;
+    const token = `@[${asset.name}](asset:${asset.id})`;
+    const prompt = `${draft.prompt.slice(0, start) + token} ${draft.prompt.slice(end)}`;
+    draft.set({ prompt, referencedAssetIds: [...new Set([...draft.referencedAssetIds, asset.id])] });
+    if (closeDrawer) {
+      setMaterialsOpen(false);
+    }
+    requestAnimationFrame(() => {
+      element?.focus();
+      const position = start + token.length + 1;
+      element?.setSelectionRange(position, position);
+    });
+  };
+  /** Insert one or more image reference tokens in a single draft update. */
+  const insertImageTokens = (items: UploadSummary[]) => {
+    if (!items.length) {
+      return;
+    }
+    const element = textareaRef.current;
+    const start = element?.selectionStart ?? draft.prompt.length;
+    const end = element?.selectionEnd ?? start;
+    const insertion = `${items.map((item) => `![${item.name}](image:${item.id})`).join(' ')} `;
+    const prompt = draft.prompt.slice(0, start) + insertion + draft.prompt.slice(end);
+    draft.set({ prompt });
+    requestAnimationFrame(() => {
+      element?.focus();
+      const position = start + insertion.length;
+      element?.setSelectionRange(position, position);
+    });
+  };
   const save = useMutation({
     mutationFn: ({ id, body }: { id?: string; body: { name: string; prompt: string; category: string } }) =>
       id ? api.updateAsset(id, body) : api.createAsset(body),
@@ -80,11 +115,36 @@ function Workspace() {
     },
     onError: (error) => setNotice((error as Error).message),
   });
+  const upload = useMutation({
+    mutationFn: async (files: File[]) => {
+      const created: UploadSummary[] = [];
+      for (const file of files) {
+        created.push(await api.createUpload(file));
+      }
+      return created;
+    },
+    onSuccess: (created) => {
+      qc.invalidateQueries({ queryKey: ['uploads'] });
+      setNotice(`已上传 ${created.length} 张图片，点击缩略图即可插入引用`);
+    },
+    onError: (error) => setNotice((error as Error).message),
+  });
+  const removeUpload = useMutation({
+    mutationFn: (target: UploadSummary) => api.archiveUpload(target.id),
+    onSuccess: (archived) => {
+      qc.invalidateQueries({ queryKey: ['uploads'] });
+      const prompt = draft.prompt.replace(new RegExp(`!\\[[^\\]]*\\]\\(image:${archived.id}\\)\\s?`, 'g'), '');
+      draft.set({ prompt });
+      setNotice('图片已移除');
+    },
+    onError: (error) => setNotice((error as Error).message),
+  });
   const submit = useMutation({
     mutationFn: () =>
       api.createJob({
         authoredPrompt: draft.prompt,
         referencedAssetIds: referencedIdsFromPrompt(draft.prompt, assets.data ?? []),
+        referencedImageIds: referencedImageIdsFromPrompt(draft.prompt, uploads.data ?? []),
         ...draft.options,
       }),
     onSuccess: () => {
@@ -94,27 +154,12 @@ function Workspace() {
     },
     onError: (error) => setNotice((error as Error).message),
   });
-  const loading = assets.isLoading || jobs.isLoading;
+  const loading = assets.isLoading || jobs.isLoading || uploads.isLoading;
   const loadError = assets.error || jobs.error;
   const refresh = () => {
     assets.refetch();
     jobs.refetch();
-  };
-  const insertAsset = (asset: AssetRow, closeDrawer = false) => {
-    const element = textareaRef.current;
-    const start = element?.selectionStart ?? draft.prompt.length;
-    const end = element?.selectionEnd ?? start;
-    const token = `@[${asset.name}](asset:${asset.id})`;
-    const prompt = `${draft.prompt.slice(0, start) + token} ${draft.prompt.slice(end)}`;
-    draft.set({ prompt, referencedAssetIds: [...new Set([...draft.referencedAssetIds, asset.id])] });
-    if (closeDrawer) {
-      setMaterialsOpen(false);
-    }
-    requestAnimationFrame(() => {
-      element?.focus();
-      const position = start + token.length + 1;
-      element?.setSelectionRange(position, position);
-    });
+    uploads.refetch();
   };
 
   return (
@@ -186,7 +231,14 @@ function Workspace() {
             </Alert>
           )}
 
-          <PromptComposer assets={assets.data ?? []} loading={assets.isLoading} textareaRef={textareaRef} />
+          <PromptComposer
+            assets={assets.data ?? []}
+            loading={assets.isLoading}
+            uploads={uploads.data ?? []}
+            onSelectUpload={(uploadItem) => insertImageTokens([uploadItem])}
+            onRemoveUpload={(uploadItem) => removeUpload.mutate(uploadItem)}
+            textareaRef={textareaRef}
+          />
 
           <Card>
             <CardContent className="flex flex-wrap items-center gap-3 p-4">
@@ -249,17 +301,31 @@ function Workspace() {
                   ))}
                 </SelectContent>
               </Select>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="w-full sm:w-auto">
-                    <Button type="button" variant="outline" className="w-full" disabled>
-                      <ImagePlus />
-                      添加图片
-                    </Button>
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>Phase 1 仅支持文本素材</TooltipContent>
-              </Tooltip>
+              <input
+                ref={uploadInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                multiple
+                hidden
+                aria-label="选择要上传的图片"
+                onChange={(event) => {
+                  const files = Array.from(event.currentTarget.files ?? []);
+                  event.currentTarget.value = '';
+                  if (files.length) {
+                    upload.mutate(files);
+                  }
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto"
+                disabled={upload.isPending}
+                onClick={() => uploadInputRef.current?.click()}
+              >
+                <ImagePlus />
+                {upload.isPending ? '上传中…' : '添加图片'}
+              </Button>
               <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setParams(true)}>
                 <Settings2 />
                 更多参数

@@ -61,6 +61,66 @@ describe('durable generation worker', () => {
     db.close();
   });
 
+  test('forwards snapshot reference images to the generator', async () => {
+    const db = await openDatabase(':memory:');
+    const repo = createRepositories(db.db);
+    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const upload = repo.createUpload({
+      name: 'ref.png',
+      mimeType: 'image/png',
+      sizeBytes: bytes.byteLength,
+      data: Buffer.from(bytes).toString('base64'),
+    });
+    repo.createJob({
+      assetName: 'demo',
+      prompt: 'p',
+      referencedImages: [{ kind: 'image', id: upload.id, name: upload.name, mimeType: upload.mimeType }],
+      options: {},
+      count: 1,
+    });
+    const calls: Array<Array<{ data: string; mimeType: string; fileName: string }>> = [];
+    await createWorker({
+      repositories: repo,
+      outputDir: `/tmp/sticker-worker-${crypto.randomUUID()}`,
+      generator: async (input) => {
+        calls.push(input.sticker.referenceImages);
+        return { success: true, imageBuffer: Buffer.from('x'), mimeType: 'image/png' };
+      },
+    }).drain();
+    expect(calls).toEqual([
+      [{ data: Buffer.from(bytes).toString('base64'), mimeType: 'image/png', fileName: 'ref.png' }],
+    ]);
+    db.close();
+  });
+
+  test('fails items when a referenced upload no longer exists', async () => {
+    const db = await openDatabase(':memory:');
+    const repo = createRepositories(db.db);
+    repo.createJob({
+      assetName: 'demo',
+      prompt: 'p',
+      referencedImages: [{ kind: 'image', id: crypto.randomUUID(), name: 'gone.png', mimeType: 'image/png' }],
+      options: {},
+      count: 1,
+    });
+    let calls = 0;
+    const worker = createWorker({
+      repositories: repo,
+      outputDir: `/tmp/sticker-worker-${crypto.randomUUID()}`,
+      generator: async () => {
+        calls++;
+        return { success: true, imageBuffer: Buffer.from('x'), mimeType: 'image/png' };
+      },
+    });
+    await worker.drain();
+    expect(calls).toBe(0);
+    const created = repo.listJobs(1, 0)[0];
+    const detail = created ? repo.getJob(created.id) : undefined;
+    expect(detail?.items[0]?.status).toBe('failed');
+    expect(detail?.items[0]?.error).toContain('reference image');
+    db.close();
+  });
+
   test('queued cancellation is honored', async () => {
     const db = await openDatabase(':memory:');
     const repo = createRepositories(db.db);

@@ -32,7 +32,8 @@ describe('sqlite data layer', () => {
     const second = await openDatabase(path);
     expect(createRepositories(second.db).getAsset(asset.id)?.prompt).toBe('hello');
     second.close();
-    await unlink(path);
+    // Best-effort cleanup: Windows can briefly keep SQLite files locked after close.
+    await unlink(path).catch(() => {});
     await unlink(`${path}-wal`).catch(() => {});
     await unlink(`${path}-shm`).catch(() => {});
   });
@@ -137,6 +138,22 @@ describe('sqlite data layer', () => {
       'invalid',
     );
     void job;
+    handle.close();
+  });
+
+  test('stores uploads with payloads kept out of listings', async () => {
+    const handle = await openDatabase(':memory:');
+    const repo = createRepositories(handle.db);
+    const upload = repo.createUpload({ name: 'a.png', mimeType: 'image/png', sizeBytes: 3, data: 'AAA' });
+    expect(upload).not.toHaveProperty('data');
+    const listed = repo.listUploads();
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatchObject({ id: upload.id, name: 'a.png', mimeType: 'image/png', sizeBytes: 3 });
+    expect(listed[0]).not.toHaveProperty('data');
+    expect(repo.getUpload(upload.id)?.data).toBe('AAA');
+    repo.archiveUpload(upload.id);
+    expect(repo.listUploads()).toHaveLength(0);
+    expect(repo.getUpload(upload.id)?.data).toBe('AAA');
     handle.close();
   });
 });

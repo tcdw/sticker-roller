@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { AUTO, DEFAULT_MODEL } from '../../src/image-options';
-import type { AssetRow, FileRow, ItemRow, JobRow } from '../../src/web-types';
+import type { AssetRow, FileRow, ItemRow, JobRow, UploadSummary } from '../../src/web-types';
 export type Job = JobRow & {
   options: Record<string, unknown>;
   items: (ItemRow & { files?: FileRow[] })[];
@@ -33,6 +33,17 @@ export function referencedIdsFromPrompt(prompt: string, assets: AssetRow[]): str
     ),
   ];
 }
+export const IMAGE_TOKEN = /!\[([^\]]+)\]\(image:([^)]+)\)/g;
+export function referencedImageIdsFromPrompt(prompt: string, uploads: UploadSummary[]): string[] {
+  const known = new Set(uploads.map((upload) => upload.id));
+  return [
+    ...new Set(
+      Array.from(prompt.matchAll(IMAGE_TOKEN), (match) => match[2]).filter((id): id is string =>
+        Boolean(id && known.has(id)),
+      ),
+    ),
+  ];
+}
 export const api = {
   async request<T>(path: string, init?: RequestInit): Promise<T> {
     const r = await fetch(path, { ...init, headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) } });
@@ -50,10 +61,24 @@ export const api = {
   archiveAsset: (id: string) => api.request<AssetRow>(`/api/assets/${id}`, { method: 'DELETE', body: '{}' }),
   jobs: () => api.request<JobRow[]>('/api/jobs'),
   job: (id: string) => api.request<Job>(`/api/jobs/${id}`),
-  createJob: (body: { authoredPrompt: string; referencedAssetIds: string[] } & Options) =>
-    api.request<Job>('/api/jobs', { method: 'POST', body: JSON.stringify(body) }),
+  createJob: (
+    body: { authoredPrompt: string; referencedAssetIds: string[]; referencedImageIds?: string[] } & Options,
+  ) => api.request<Job>('/api/jobs', { method: 'POST', body: JSON.stringify(body) }),
   cancel: (id: string) => api.request<Job>(`/api/jobs/${id}/cancel`, { method: 'POST', body: '{}' }),
   retry: (id: string) => api.request<Job>(`/api/jobs/${id}/retry-failed`, { method: 'POST', body: '{}' }),
+  uploads: () => api.request<UploadSummary[]>('/api/uploads'),
+  createUpload: async (file: File): Promise<UploadSummary> => {
+    // Multipart upload: the browser sets the multipart boundary, so no JSON headers here.
+    const form = new FormData();
+    form.append('file', file);
+    const r = await fetch('/api/uploads', { method: 'POST', body: form });
+    const data = await r.json();
+    if (!r.ok) {
+      throw new Error(data?.error?.message ?? '上传失败');
+    }
+    return data as UploadSummary;
+  },
+  archiveUpload: (id: string) => api.request<UploadSummary>(`/api/uploads/${id}`, { method: 'DELETE', body: '{}' }),
 };
 export const saveAsset = (id: string | undefined, body: { name: string; prompt: string; category?: string }) =>
   id ? api.updateAsset(id, body) : api.createAsset(body);

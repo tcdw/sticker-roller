@@ -1,5 +1,5 @@
 import { stat } from 'node:fs/promises';
-import { basename, join, resolve } from 'node:path';
+import { basename, join, resolve, sep } from 'node:path';
 import { DEFAULT_MODEL, DEFAULT_REMOVE_BACKGROUND, SUPPORTED_MODELS } from '../src/config';
 import type { Repositories } from '../src/db/repositories';
 import { AUTO, isSupportedAspectRatio, isSupportedImageSize } from '../src/image-options';
@@ -7,6 +7,7 @@ import { AUTO, isSupportedAspectRatio, isSupportedImageSize } from '../src/image
 const idPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_PROMPT = 10000;
 const MAX_COUNT = 20;
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const jsonHeaders = { 'content-type': 'application/json; charset=utf-8' };
 
 type Deps = { repositories: Repositories; outputDir?: string };
@@ -23,6 +24,21 @@ function text(value: unknown, field: string, max = 200): string {
   return value.trim();
 }
 class InputError extends Error {}
+const IMAGE_SIGNATURES: Array<{ mimeType: string; test: (bytes: Uint8Array) => boolean }> = [
+  {
+    mimeType: 'image/png',
+    test: (b) => b.length > 3 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47,
+  },
+  { mimeType: 'image/jpeg', test: (b) => b.length > 2 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+  {
+    mimeType: 'image/webp',
+    test: (b) => b.length > 11 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50,
+  },
+];
+/** Trust bytes over the client-provided content type when deciding what was uploaded. */
+function sniffImageMimeType(bytes: Uint8Array): string | null {
+  return IMAGE_SIGNATURES.find((signature) => signature.test(bytes))?.mimeType ?? null;
+}
 function parseMetadata(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new InputError('metadata must be an object');
@@ -175,6 +191,58 @@ export function createApiHandler(deps: Deps) {
           }
         }
       }
+      if (parts[1] === 'uploads') {
+        if (req.method === 'GET' && parts.length === 2) {
+          return ok(repo.listUploads(url.searchParams.get('includeArchived') === 'true'));
+        }
+        if (req.method === 'POST' && parts.length === 2) {
+          if (!req.headers.get('content-type')?.toLowerCase().startsWith('multipart/form-data')) {
+            throw new InputError('multipart/form-data content type is required');
+          }
+          let form: FormData;
+          try {
+            form = await req.formData();
+          } catch {
+            throw new InputError('invalid multipart body');
+          }
+          const file = form.get('file');
+          if (!(file instanceof File)) {
+            throw new InputError('file field is required');
+          }
+          if (file.size > MAX_UPLOAD_BYTES) {
+            throw new InputError(`image must be at most ${MAX_UPLOAD_BYTES} bytes`);
+          }
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          const mimeType = sniffImageMimeType(bytes);
+          if (!mimeType) {
+            throw new InputError('only PNG, JPEG, or WebP images are supported');
+          }
+          return ok(
+            repo.createUpload({
+              name: text(file.name || 'image', 'name', 200),
+              mimeType,
+              sizeBytes: file.size,
+              data: Buffer.from(bytes).toString('base64'),
+            }),
+            201,
+          );
+        }
+        if (parts.length >= 3 && validId(parts[2])) {
+          if (req.method === 'GET' && parts.length === 3) {
+            const upload = repo.getUpload(parts[2]);
+            if (!upload) {
+              return error(404, 'NOT_FOUND', 'upload not found');
+            }
+            return new Response(Buffer.from(upload.data, 'base64'), {
+              headers: { 'content-type': upload.mimeType, 'cache-control': 'private, max-age=86400' },
+            });
+          }
+          if (req.method === 'DELETE' && parts.length === 3) {
+            const upload = repo.archiveUpload(parts[2]);
+            return upload ? ok(upload) : error(404, 'NOT_FOUND', 'upload not found');
+          }
+        }
+      }
       if (parts[1] === 'jobs') {
         if (req.method === 'GET' && parts.length === 2) {
           const limit = Number(url.searchParams.get('limit') ?? 50),
@@ -187,7 +255,7 @@ export function createApiHandler(deps: Deps) {
         if (req.method === 'POST' && parts.length === 2) {
           const b = await body(req);
           if (b.referenceImages !== undefined || b.referenceImage !== undefined) {
-            throw new InputError('reference images are not supported in phase 1');
+            throw new InputError('inline reference images are not supported; upload images and use referencedImageIds');
           }
           const count = b.count ?? 1;
           if (typeof count !== 'number' || !Number.isInteger(count) || count < 1 || count > MAX_COUNT) {
@@ -211,15 +279,33 @@ export function createApiHandler(deps: Deps) {
               metadata: JSON.parse(a.metadata || '{}'),
             };
           });
+          const rawImageIds = b.referencedImageIds ?? [];
+          if (!Array.isArray(rawImageIds) || rawImageIds.some((v) => !validId(String(v)))) {
+            throw new InputError('referencedImageIds must contain valid upload IDs');
+          }
+          const imageRefs = rawImageIds.map((v) => {
+            const u = repo.getUpload(String(v));
+            if (!u || u.archivedAt) {
+              throw new InputError('referenced image not found');
+            }
+            return { kind: 'image' as const, id: u.id, name: u.name, mimeType: u.mimeType };
+          });
+          // Reference images travel as provider content parts, so replace their
+          // inline tokens with the plain image name in the expanded prompt.
+          let promptText = authoredPrompt;
+          for (const ref of imageRefs) {
+            promptText = promptText.replace(new RegExp(`!\\[[^\\]]*\\]\\(image:${ref.id}\\)`, 'g'), () => ref.name);
+          }
           const expandedPrompt = refs.length
-            ? `${authoredPrompt}\n\n${refs.map((r) => `[${r.name}]\n${r.prompt}`).join('\n\n')}`
-            : authoredPrompt;
+            ? `${promptText}\n\n${refs.map((r) => `[${r.name}]\n${r.prompt}`).join('\n\n')}`
+            : promptText;
           const options = validateOptions(b);
           const job = repo.createJob({
             assetId: refs[0]?.id,
             assetName: refs[0]?.name ?? 'text',
             authoredPrompt,
             referencedAssets: refs,
+            referencedImages: imageRefs,
             prompt: expandedPrompt,
             options,
             count,
@@ -260,7 +346,7 @@ export function createApiHandler(deps: Deps) {
           return error(404, 'NOT_FOUND', 'output not found');
         }
         const target = resolve(outputDir, fileName);
-        if (!target.startsWith(`${outputDir}/`)) {
+        if (!target.startsWith(outputDir + sep)) {
           return error(404, 'NOT_FOUND', 'output not found');
         }
         try {

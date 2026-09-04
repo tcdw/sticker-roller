@@ -15,6 +15,21 @@ export const assets = sqliteTable(
   (t) => [uniqueIndex('assets_name_uq').on(t.name)],
 );
 
+export const uploads = sqliteTable(
+  'uploads',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    mimeType: text('mime_type').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    data: text('data').notNull(),
+    archivedAt: text('archived_at'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (t) => [index('uploads_created_idx').on(t.createdAt)],
+);
+
 export const jobs = sqliteTable(
   'jobs',
   {
@@ -99,10 +114,13 @@ export const events = sqliteTable(
   (t) => [index('events_job_idx').on(t.jobId, t.id)],
 );
 
-export const schema = { assets, jobs, items, requests, files, events };
+export const schema = { assets, jobs, items, requests, files, events, uploads };
 export type AssetRow = typeof assets.$inferSelect;
 export type JobRow = typeof jobs.$inferSelect;
 export type ItemRow = typeof items.$inferSelect;
 export type RequestRow = typeof requests.$inferSelect;
 export type FileRow = typeof files.$inferSelect;
 export type EventRow = typeof events.$inferSelect;
+export type UploadRow = typeof uploads.$inferSelect;
+/** Upload row without the base64 payload, used for listings and API responses. */
+export type UploadSummary = Omit<UploadRow, 'data'>;

@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import * as schema from './schema';
@@ -20,7 +21,8 @@ export async function openDatabase(
   const sqlite = new Database(path);
   sqlite.run('PRAGMA foreign_keys = ON');
   const db = drizzle(sqlite, { schema });
-  migrate(db, { migrationsFolder: new URL('../../drizzle', import.meta.url).pathname });
+  // URL.pathname keeps a leading slash on Windows, so convert to a real path.
+  migrate(db, { migrationsFolder: fileURLToPath(new URL('../../drizzle', import.meta.url)) });
   return { db, sqlite, close: () => sqlite.close() };
 }
 export function nowUtc(): string {

@@ -1,4 +1,4 @@
-import { resolve } from 'node:path';
+import { resolve, sep } from 'node:path';
 import { openDatabase } from '../src/db/client';
 import { createRepositories } from '../src/db/repositories';
 import { createWorker, startGenerationWorker, stopGenerationWorker } from '../src/jobs';
@@ -21,7 +21,7 @@ export async function createServer(options: ServerOptions = {}) {
   return { database, repositories, worker, api };
 }
 
-async function staticResponse(dist: string, pathname: string): Promise<Response> {
+export async function staticResponse(dist: string, pathname: string): Promise<Response> {
   let decoded: string;
   try {
     decoded = decodeURIComponent(pathname);
@@ -34,7 +34,8 @@ async function staticResponse(dist: string, pathname: string): Promise<Response>
   const requested = decoded === '/' ? '/index.html' : decoded;
   const distRoot = resolve(dist);
   const target = resolve(distRoot, `.${requested}`);
-  const inDist = target === distRoot || target.startsWith(`${distRoot}/`);
+  // Path separators are platform-specific, so the containment check must be too.
+  const inDist = target === distRoot || target.startsWith(distRoot + sep);
   if (inDist) {
     const file = Bun.file(target);
     if (await file.exists()) {

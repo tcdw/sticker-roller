@@ -1,6 +1,6 @@
 import { mkdir, rename, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { StickerConfig } from '../config';
+import type { ReferenceImage, StickerConfig } from '../config';
 import type { Repositories } from '../db/repositories';
 import { generateSingleImage, type SingleImageResult } from '../generator';
 
@@ -144,8 +144,20 @@ export class GenerationWorker {
     let tempPath: string | undefined;
     try {
       const options = JSON.parse(job.optionsSnapshot) as Record<string, unknown>;
+      const references = JSON.parse(job.referencesSnapshot) as Array<{ kind?: string; id: string }>;
+      const referenceImages: ReferenceImage[] = [];
+      for (const reference of references) {
+        if (reference.kind !== 'image') {
+          continue;
+        }
+        const upload = this.repo.getUpload(reference.id);
+        if (!upload) {
+          throw new Error(`reference image ${reference.id} not found`);
+        }
+        referenceImages.push({ data: upload.data, mimeType: upload.mimeType, fileName: upload.name });
+      }
       const result = await this.generate({
-        sticker: { name: job.assetName, prompt: job.promptSnapshot, referenceImages: [] },
+        sticker: { name: job.assetName, prompt: job.promptSnapshot, referenceImages },
         model: typeof options.model === 'string' ? options.model : undefined,
         aspectRatio: typeof options.aspectRatio === 'string' ? options.aspectRatio : undefined,
         imageSize: typeof options.imageSize === 'string' ? options.imageSize : undefined,

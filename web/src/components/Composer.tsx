@@ -1,6 +1,6 @@
 import { X } from 'lucide-react';
 import type { RefObject } from 'react';
-import type { AssetRow } from '../../../src/web-types';
+import type { AssetRow, UploadSummary } from '../../../src/web-types';
 import { useDraft } from '../api';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -26,6 +26,62 @@ export function AssetReferenceToken({ asset, onRemove }: { asset: AssetRow; onRe
         <X className="h-3 w-3" />
       </Button>
     </Badge>
+  );
+}
+
+export function UploadStrip({
+  uploads,
+  referencedIds,
+  onSelect,
+  onRemove,
+}: {
+  uploads: UploadSummary[];
+  referencedIds: Set<string>;
+  onSelect: (upload: UploadSummary) => void;
+  onRemove: (upload: UploadSummary) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between px-1">
+        <h3 className="text-sm font-medium">图片素材</h3>
+        <span className="text-xs text-muted-foreground">点击插入引用</span>
+      </div>
+      <div className="flex flex-wrap gap-3">
+        {uploads.map((upload) => {
+          const referenced = referencedIds.has(upload.id);
+          return (
+            <div key={upload.id} className="relative">
+              <button
+                type="button"
+                className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                title={`引用 ID: ${upload.id}`}
+                onClick={() => onSelect(upload)}
+                aria-label={`插入 ${upload.name} 图片引用`}
+              >
+                <img
+                  src={`/api/uploads/${encodeURIComponent(upload.id)}`}
+                  alt={upload.name}
+                  loading="lazy"
+                  className={`h-16 w-16 rounded-lg border-2 object-cover transition-colors ${
+                    referenced ? 'border-primary' : 'border-transparent hover:border-border'
+                  }`}
+                />
+              </button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon"
+                className="absolute -right-1.5 -top-1.5 h-5 w-5 rounded-full"
+                onClick={() => onRemove(upload)}
+                aria-label={`移除图片 ${upload.name}`}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -139,14 +195,23 @@ export function MaterialsSidebar({
 export function PromptComposer({
   assets,
   loading,
+  uploads,
+  onSelectUpload,
+  onRemoveUpload,
   textareaRef,
 }: {
   assets: AssetRow[];
   loading: boolean;
+  uploads: UploadSummary[];
+  onSelectUpload: (upload: UploadSummary) => void;
+  onRemoveUpload: (upload: UploadSummary) => void;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
 }) {
   const draft = useDraft();
   const mentioned = assets.filter((asset) => draft.prompt.includes(`](asset:${asset.id})`));
+  const referencedUploadIds = new Set(
+    uploads.filter((upload) => draft.prompt.includes(`](image:${upload.id})`)).map((upload) => upload.id),
+  );
   const removeToken = (asset: AssetRow) => {
     const prompt = draft.prompt.replace(
       new RegExp(`@\\[${asset.name.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}\\]\\(asset:${asset.id}\\)\\s?`, 'g'),
@@ -159,7 +224,7 @@ export function PromptComposer({
     <Card className="min-w-0">
       <CardHeader>
         <CardTitle>描述你要生成的内容</CardTitle>
-        <CardDescription>编写完整任务，从素材库选择素材可在光标位置插入稳定引用。</CardDescription>
+        <CardDescription>编写完整任务，从素材库选择素材或点击已上传图片，可在光标位置插入稳定引用。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <Textarea
@@ -184,6 +249,14 @@ export function PromptComposer({
               <AssetReferenceToken key={asset.id} asset={asset} onRemove={() => removeToken(asset)} />
             ))}
           </div>
+        ) : null}
+        {uploads.length ? (
+          <UploadStrip
+            uploads={uploads}
+            referencedIds={referencedUploadIds}
+            onSelect={onSelectUpload}
+            onRemove={onRemoveUpload}
+          />
         ) : null}
         <Tooltip>
           <TooltipTrigger asChild>
