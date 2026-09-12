@@ -1,34 +1,16 @@
-import { mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createGateway, generateText } from 'ai';
 import sharp from 'sharp';
-import {
-  BACKGROUND_KEY_COLOR,
-  DEFAULT_ASPECT_RATIO,
-  DEFAULT_IMAGE_SIZE,
-  DEFAULT_MODEL,
-  DEFAULT_REMOVE_BACKGROUND,
-  type StickerConfig,
-} from './config';
+import { BACKGROUND_KEY_COLOR, DEFAULT_MODEL, DEFAULT_REMOVE_BACKGROUND, type StickerConfig } from './config';
 import { buildProviderImageConfig } from './image-options';
 
-const OUTPUT_DIR = join(import.meta.dir, '..', 'output');
-
-export interface GenerateOptions {
+/** Input for one image: the caller decides the output path (see src/jobs/worker.ts). */
+export interface ImageGenerationOptions {
   sticker: StickerConfig;
-  count: number;
   model?: string;
   aspectRatio?: string;
   imageSize?: string;
   removeBackground?: boolean;
-  onProgress?: (current: number, total: number) => void;
-}
-
-export interface GenerateResult {
-  success: boolean;
-  filePath?: string;
-  error?: string;
 }
 
 type ImageConfigAspectRatio = '1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '4:5' | '5:4' | '9:16' | '16:9' | '21:9';
@@ -37,7 +19,7 @@ type ImageConfigSize = '1K' | '2K' | '4K';
 
 const BACKGROUND_PROMPT_INSTRUCTION = `\n\nCRITICAL BACKGROUND INSTRUCTION: The entire background of this image must be a solid, uniform bright magenta color (${BACKGROUND_KEY_COLOR} / fuchsia). No gradients, no variations - pure ${BACKGROUND_KEY_COLOR}. The subject must be clearly separated from this magenta background. Do NOT use magenta, fuchsia, bright pink, purple, or violet colors anywhere on the subject, outline, glow, shadow, or edge pixels.`;
 
-function resolveRemoveBackground(options: GenerateOptions): boolean {
+function resolveRemoveBackground(options: ImageGenerationOptions): boolean {
   if (options.removeBackground !== undefined) {
     return options.removeBackground;
   }
@@ -151,13 +133,11 @@ export interface SingleImageResult {
 }
 
 /** Generate one image without choosing a filesystem path. */
-export async function generateSingleImage(
-  options: Omit<GenerateOptions, 'count' | 'onProgress'>,
-): Promise<SingleImageResult> {
+export async function generateSingleImage(options: ImageGenerationOptions): Promise<SingleImageResult> {
   const aspectRatio = options.aspectRatio ?? options.sticker.aspectRatio;
   const imageSize = options.imageSize ?? options.sticker.imageSize;
   const imageConfig = buildProviderImageConfig({ aspectRatio, imageSize });
-  const doRemoveBg = resolveRemoveBackground(options as GenerateOptions);
+  const doRemoveBg = resolveRemoveBackground(options);
   try {
     const content: Array<{ type: 'text'; text: string } | { type: 'image'; image: string; mimeType: string }> = [];
     for (const refImage of options.sticker.referenceImages) {
@@ -189,108 +169,5 @@ export async function generateSingleImage(
     return { success: true, imageBuffer, mimeType: doRemoveBg ? 'image/png' : file.mediaType };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'image generation failed' };
-  }
-}
-export async function generateImages(options: GenerateOptions): Promise<GenerateResult[]> {
-  const aspectRatio = options.aspectRatio || options.sticker.aspectRatio || DEFAULT_ASPECT_RATIO;
-  const imageSize = options.imageSize || options.sticker.imageSize || DEFAULT_IMAGE_SIZE;
-  const doRemoveBg = resolveRemoveBackground(options);
-
-  const provider = createProvider();
-  const modelId = getModelId(options.model);
-  const results: GenerateResult[] = [];
-  const timestamp = Date.now();
-  await mkdir(OUTPUT_DIR, { recursive: true });
-
-  for (let i = 0; i < options.count; i++) {
-    options.onProgress?.(i + 1, options.count);
-
-    try {
-      const content: Array<{ type: 'text'; text: string } | { type: 'image'; image: string; mimeType: string }> = [];
-
-      for (const refImage of options.sticker.referenceImages) {
-        content.push({
-          type: 'image',
-          image: refImage.data,
-          mimeType: refImage.mimeType,
-        });
-      }
-
-      const promptText = doRemoveBg ? options.sticker.prompt + BACKGROUND_PROMPT_INSTRUCTION : options.sticker.prompt;
-
-      content.push({ type: 'text', text: promptText });
-
-      const result = await generateText({
-        model: provider(modelId),
-        messages: [{ role: 'user', content }],
-        providerOptions: {
-          google: {
-            imageConfig: {
-              aspectRatio: aspectRatio as ImageConfigAspectRatio,
-              imageSize: imageSize as ImageConfigSize,
-            },
-          },
-        },
-      });
-
-      let savedFile = false;
-
-      if (result.files && result.files.length > 0) {
-        for (const file of result.files) {
-          if (file.mediaType?.startsWith('image/')) {
-            const mimeType = file.mediaType;
-            let rawBuffer: Buffer = Buffer.from(file.base64, 'base64') as Buffer;
-
-            const ext = doRemoveBg
-              ? '.png'
-              : mimeType === 'image/jpeg'
-                ? '.jpg'
-                : mimeType === 'image/webp'
-                  ? '.webp'
-                  : '.png';
-            const fileName = `${options.sticker.name}-${timestamp}-${i + 1}${ext}`;
-            const filePath = join(OUTPUT_DIR, fileName);
-
-            if (doRemoveBg) {
-              rawBuffer = await removeBackground(rawBuffer);
-            }
-
-            await Bun.write(filePath, rawBuffer);
-
-            results.push({
-              success: true,
-              filePath,
-            });
-            savedFile = true;
-            break;
-          }
-        }
-      }
-
-      if (!savedFile) {
-        results.push({
-          success: false,
-          error: 'No image in response',
-        });
-      }
-    } catch (error) {
-      results.push({
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  return results;
-}
-
-/**
- * Get the current mode description
- */
-export function getGeneratorMode(): string {
-  if (isGatewayMode()) {
-    return `AI Gateway (${process.env.AI_GATEWAY_URL})`;
-  } else {
-    return 'Direct Google API';
   }
 }

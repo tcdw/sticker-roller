@@ -6,12 +6,6 @@ To install dependencies:
 bun install
 ```
 
-To run:
-
-```bash
-bun run index.ts
-```
-
 ## Web server
 
 ```bash
@@ -20,7 +14,7 @@ bun run build # production frontend into dist/
 bun run web   # production server (serves dist when present)
 ```
 
-The API binds to `127.0.0.1` by default. Set `DATABASE_PATH`, `OUTPUT_DIR`, `HOST`, or `PORT` as needed. Phase 1 stores text assets and never scans `stickers/` or `stickers_archived/`.
+The API binds to `127.0.0.1` by default. Set `DATABASE_PATH`, `OUTPUT_DIR`, `HOST`, or `PORT` as needed. Assets are created and managed in SQLite only — the app never scans `stickers/` or `stickers_archived/`, which are kept as an untouched prompt archive.
 
 ## CLI
 
@@ -59,26 +53,5 @@ Only the reviewed subset lives in these docs — `help --json` is the source of 
 ### Agent skill
 
 [`.agents/skills/sticker-prompt-roll`](.agents/skills/sticker-prompt-roll/SKILL.md) turns the CLI into a prompt-iteration loop for coding agents: look at the library first, generate cheap drafts, read the produced image, change one thing at a time.
-
-
-`prompt.md` supports reusable includes with the syntax `{{include: path}}`.
-
-- Paths are resolved relative to the current prompt file.
-- If not found, it also checks `stickers/_includes/`.
-- If no extension is provided, it tries `.md` first, then `.txt`.
-
-Example:
-
-```
-stickers/_includes/base.md
-stickers/my-sticker/prompt.md
-```
-
-```md
-{{include: base}}
-
-## Specific request
-Draw a smiling chibi character with a white background.
-```
 
 This project was created using `bun init` in bun v1.3.5. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.

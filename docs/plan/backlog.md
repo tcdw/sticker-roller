@@ -7,3 +7,4 @@
 - Add stronger integration coverage for registered output reuse after an actual worker restart.
 - Deduplicate image materials by content hash so reusing the same generated result twice does not create a second upload row.
 - Give the prompt composer an inline token editor; reuse currently restores tokens as plain text in the textarea.
+- `stickers/` and `stickers_archived/` are now an inert prompt archive: no code reads them since the folder-based CLI was removed. Decide whether to migrate their prompts into the SQLite asset library or drop them.
