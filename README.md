@@ -55,3 +55,9 @@ Only the reviewed subset lives in these docs — `help --json` is the source of 
 [`.agents/skills/sticker-prompt-roll`](.agents/skills/sticker-prompt-roll/SKILL.md) turns the CLI into a prompt-iteration loop for coding agents: look at the library first, generate cheap drafts, read the produced image, change one thing at a time.
 
 This project was created using `bun init` in bun v1.3.5. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+
+## Docs
+
+- [AGENTS.md](AGENTS.md) — 面向 coding agent 的仓库入口：结构、命令、约定与安全不变量。
+- [agent-doc/](agent-doc/) — 按主题拆分的知识文档（架构、数据层、生成链路、CLI、前端、配置、运维、验证）。
+- [agent-doc/design/](agent-doc/design/) — 历史设计原文与已完成计划，只读归档。
