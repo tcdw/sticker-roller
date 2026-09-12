@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createRootRoute, createRoute, createRouter, Outlet, RouterProvider } from '@tanstack/react-router';
-import { Download, ImagePlus, Library, RefreshCw, Settings2 } from 'lucide-react';
+import { Download, ImagePlus, Library, RefreshCw, RotateCcw, Settings2 } from 'lucide-react';
 import React, { useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
@@ -10,8 +10,19 @@ import {
   resolveImageSize,
   SUPPORTED_MODELS,
 } from '../../src/image-options';
-import type { AssetRow, JobRow, UploadSummary } from '../../src/web-types';
-import { api, isActive, type Options, referencedIdsFromPrompt, referencedImageIdsFromPrompt, useDraft } from './api';
+import type { AssetRow, FileRow, UploadSummary } from '../../src/web-types';
+import {
+  api,
+  draftFromJob,
+  isActive,
+  type JobSummary,
+  type Options,
+  type ReusedDraft,
+  referencedIdsFromPrompt,
+  referencedImageIdsFromPrompt,
+  unreferencedUploads,
+  useDraft,
+} from './api';
 import { MaterialsSidebar, PromptComposer } from './components/Composer';
 import { Alert, AlertDescription, AlertTitle } from './components/ui/alert';
 import { Badge } from './components/ui/badge';
@@ -59,6 +70,8 @@ function Workspace() {
   const [dialog, setDialog] = useState<'create' | AssetRow | null>(null);
   const [params, setParams] = useState(false);
   const [materialsOpen, setMaterialsOpen] = useState(false);
+  const [pendingReuse, setPendingReuse] = useState<ReusedDraft | null>(null);
+  const [unreferenced, setUnreferenced] = useState<UploadSummary[] | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState('');
@@ -139,6 +152,52 @@ function Workspace() {
     },
     onError: (error) => setNotice((error as Error).message),
   });
+  /** Reuse a history job: authored prompt, generation options, and its reference images. */
+  const applyReuse = (reused: ReusedDraft) => {
+    draft.set({ prompt: reused.prompt, referencedAssetIds: reused.referencedAssetIds, options: reused.options });
+    setPendingReuse(null);
+    setNotice(
+      reused.missingImageNames.length
+        ? `已复用历史任务，但参考图 ${reused.missingImageNames.join('、')} 已不在图片素材中，相关引用已移除`
+        : '已复用历史任务：提示词、生图配置和参考图已填回编辑器',
+    );
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+  /**
+   * Reuse asks first while the composer is in use, so typed prompt text is never
+   * discarded silently — and neither are generation settings changed by hand.
+   * An untouched composer applies immediately, which is the point of one-click reuse.
+   */
+  const reuseJob = (job: JobSummary) => {
+    const reused = draftFromJob(job, assets.data ?? [], uploads.data ?? []);
+    const inUse = draft.prompt.trim().length > 0;
+    const optionsDiffer = Object.entries(reused.options).some(
+      ([key, value]) => draft.options[key as keyof Options] !== value,
+    );
+    if (inUse && (draft.prompt !== reused.prompt || optionsDiffer)) {
+      setPendingReuse(reused);
+      return;
+    }
+    applyReuse(reused);
+  };
+  const useOutputAsReference = useMutation({
+    mutationFn: async ({ file, ordinal }: { file: FileRow; ordinal: number }) => {
+      const response = await fetch(`/api/output/${encodeURIComponent(file.fileName)}`);
+      if (!response.ok) {
+        throw new Error(`读取生成结果失败（${response.status}）`);
+      }
+      const blob = await response.blob();
+      return api.createUpload(
+        new File([blob], `结果图${ordinal}`, { type: file.mimeType || blob.type || 'image/png' }),
+      );
+    },
+    onSuccess: (created) => {
+      qc.invalidateQueries({ queryKey: ['uploads'] });
+      insertImageTokens([created]);
+      setNotice(`已把 ${created.name} 存为图片素材并插入引用`);
+    },
+    onError: (error) => setNotice((error as Error).message),
+  });
   const submit = useMutation({
     mutationFn: () =>
       api.createJob({
@@ -149,11 +208,20 @@ function Workspace() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['jobs'] });
-      draft.reset();
-      setNotice('任务已提交');
+      draft.clearPrompt();
+      setNotice('任务已提交；提示词已清空，模型、比例、分辨率和图片素材保持不变');
     },
     onError: (error) => setNotice((error as Error).message),
   });
+  /** Warn before submitting a job that would silently ignore uploaded images. */
+  const requestSubmit = () => {
+    const pending = unreferencedUploads(draft.prompt, uploads.data ?? []);
+    if (pending.length) {
+      setUnreferenced(pending);
+      return;
+    }
+    submit.mutate();
+  };
   const loading = assets.isLoading || jobs.isLoading || uploads.isLoading;
   const loadError = assets.error || jobs.error;
   const refresh = () => {
@@ -334,7 +402,7 @@ function Workspace() {
                 type="button"
                 className="w-full sm:ml-auto sm:w-auto"
                 disabled={submit.isPending || !draft.prompt.trim()}
-                onClick={() => submit.mutate()}
+                onClick={requestSubmit}
               >
                 {submit.isPending ? '提交中…' : `提交任务 · ${draft.options.count} 张`}
               </Button>
@@ -347,7 +415,13 @@ function Workspace() {
               <AlertDescription>{notice}</AlertDescription>
             </Alert>
           )}
-          <History jobs={jobs.data ?? []} loading={jobs.isLoading} />
+          <History
+            jobs={jobs.data ?? []}
+            loading={jobs.isLoading}
+            onReuse={reuseJob}
+            onUseOutput={(file, ordinal) => useOutputAsReference.mutate({ file, ordinal })}
+            outputPending={useOutputAsReference.isPending}
+          />
         </section>
       </main>
 
@@ -367,7 +441,88 @@ function Workspace() {
           setParams(false);
         }}
       />
+      <ReuseDialog
+        reused={pendingReuse}
+        onClose={() => setPendingReuse(null)}
+        onConfirm={() => pendingReuse && applyReuse(pendingReuse)}
+      />
+      <UnreferencedImagesDialog
+        uploads={unreferenced}
+        onClose={() => setUnreferenced(null)}
+        onConfirm={() => {
+          setUnreferenced(null);
+          submit.mutate();
+        }}
+      />
     </div>
+  );
+}
+
+function ReuseDialog({
+  reused,
+  onClose,
+  onConfirm,
+}: {
+  reused: ReusedDraft | null;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog open={reused !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>覆盖当前编辑器？</DialogTitle>
+          <DialogDescription>复用会填回历史任务的提示词、生图配置和参考图，当前输入的内容会被覆盖。</DialogDescription>
+        </DialogHeader>
+        {reused && (
+          <p className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md border bg-muted/40 p-3 text-xs leading-5">
+            {reused.prompt}
+          </p>
+        )}
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button type="button" variant="outline" onClick={onClose}>
+            取消
+          </Button>
+          <Button type="button" onClick={onConfirm}>
+            覆盖并复用
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function UnreferencedImagesDialog({
+  uploads,
+  onClose,
+  onConfirm,
+}: {
+  uploads: UploadSummary[] | null;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog open={uploads !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>有图片素材没有被引用</DialogTitle>
+          <DialogDescription>下面这些图片已加入素材，但 prompt 里没有引用，本次生成不会用到它们。</DialogDescription>
+        </DialogHeader>
+        <ul className="list-disc space-y-1 pl-5 text-sm">
+          {(uploads ?? []).map((upload) => (
+            <li key={upload.id}>{upload.name}</li>
+          ))}
+        </ul>
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button type="button" variant="outline" onClick={onClose}>
+            返回检查
+          </Button>
+          <Button type="button" onClick={onConfirm}>
+            仍然提交
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -500,7 +655,19 @@ function ParametersDialog({
   );
 }
 
-function History({ jobs, loading }: { jobs: JobRow[]; loading: boolean }) {
+function History({
+  jobs,
+  loading,
+  onReuse,
+  onUseOutput,
+  outputPending,
+}: {
+  jobs: JobSummary[];
+  loading: boolean;
+  onReuse: (job: JobSummary) => void;
+  onUseOutput: (file: FileRow, ordinal: number) => void;
+  outputPending: boolean;
+}) {
   return (
     <section className="space-y-4" aria-labelledby="history-heading">
       <div className="flex items-center justify-between">
@@ -526,7 +693,7 @@ function History({ jobs, loading }: { jobs: JobRow[]; loading: boolean }) {
         </Card>
       )}
       {jobs.map((job) => (
-        <JobCard key={job.id} job={job} />
+        <JobCard key={job.id} job={job} onReuse={onReuse} onUseOutput={onUseOutput} outputPending={outputPending} />
       ))}
     </section>
   );
@@ -540,7 +707,17 @@ const statusLabels: Record<string, string> = {
   cancelled: '已取消',
 };
 
-function JobCard({ job }: { job: JobRow }) {
+function JobCard({
+  job,
+  onReuse,
+  onUseOutput,
+  outputPending,
+}: {
+  job: JobSummary;
+  onReuse: (job: JobSummary) => void;
+  onUseOutput: (file: FileRow, ordinal: number) => void;
+  outputPending: boolean;
+}) {
   const qc = useQueryClient();
   const detail = useQuery({
     queryKey: ['job', job.id],
@@ -562,7 +739,13 @@ function JobCard({ job }: { job: JobRow }) {
             <CardTitle className="text-base">{new Date(job.createdAt).toLocaleString()}</CardTitle>
             <CardDescription>{job.requestedCount} 张图片</CardDescription>
           </div>
-          <Badge variant={badgeVariant}>{statusLabels[job.status] ?? job.status}</Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant={badgeVariant}>{statusLabels[job.status] ?? job.status}</Badge>
+            <Button type="button" variant="outline" size="sm" onClick={() => onReuse(job)}>
+              <RotateCcw />
+              复用
+            </Button>
+          </div>
         </div>
         {isActive(job.status) && (
           <div className="space-y-2">
@@ -591,12 +774,23 @@ function JobCard({ job }: { job: JobRow }) {
                     <a href={source} target="_blank" rel="noreferrer" aria-label="预览生成结果">
                       <img className="aspect-square w-full object-cover" src={source} alt="生成结果" />
                     </a>
-                    <CardFooter className="p-2">
+                    <CardFooter className="flex flex-col gap-2 p-2">
                       <Button type="button" variant="ghost" size="sm" className="w-full" asChild>
                         <a href={source} download={file.fileName}>
                           <Download />
                           下载
                         </a>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="w-full"
+                        disabled={outputPending}
+                        onClick={() => onUseOutput(file, item.ordinal)}
+                      >
+                        <ImagePlus />
+                        用作参考图
                       </Button>
                     </CardFooter>
                   </>

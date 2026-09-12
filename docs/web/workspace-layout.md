@@ -85,8 +85,11 @@ Visual styling uses the standard shadcn/ui design language and generated Tailwin
 | Material double click/edit | Sidebar | Open material editor; saving changes material metadata/content, not current task prompt. |
 | Prompt editor | Task | Edit composed authored text and tokens. |
 | More parameters | Toolbar | Open dialog; apply or cancel without changing unrelated prompt content. |
-| Add image | Toolbar | Disabled with Phase 1 explanation; enabled only when image assets are implemented. |
-| Submit task | Toolbar | Sends composed prompt and referenced asset IDs; creates a durable job. |
+| Add image | Toolbar | Uploads PNG/JPEG/WebP into image materials; clicking a thumbnail inserts its reference token at the prompt caret. |
+| Submit task | Toolbar | Sends composed prompt and referenced asset IDs; creates a durable job. Clears the prompt only, keeping toolbar settings and uploaded images. |
+| Submit with unreferenced images | Toolbar | Confirms first when uploaded images exist that the prompt does not reference; the list uses the same parser as submission. |
+| Reuse history task | Task | Restores that task's authored prompt, generation options, and reference images in one action; asks first when the composer holds different text. |
+| Use result as reference | Result card | Saves a generated image as a new image material and inserts its reference token into the prompt. |
 | Refresh/reopen | Whole page | Reloads assets/jobs from SQLite and resumes active job polling. |
 | Cancel | Active task | Cancels queued/not-started items only. |
 | Retry failed | Task | Requeues failed items without rerunning successful items. |

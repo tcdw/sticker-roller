@@ -12,4 +12,6 @@ This folder tracks the Web UI implementation using the docs-sprint develop/verif
 - [shadcn-001 task](tasks/shadcn-001.md)
 - [shadcn-002 task](tasks/shadcn-002.md)
 - [shadcn-002 review](reviews/shadcn-002-1.md)
+- [Reuse and submit UX task](tasks/ui-003.md)
+- [ui-003 review](reviews/ui-003-1.md)
 - [Backlog](backlog.md)
