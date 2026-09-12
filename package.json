@@ -9,6 +9,7 @@
     "web": "bun run server/index.ts",
     "build": "rsbuild build",
     "generate": "bun run index.ts",
+    "cli": "bun run cli.ts",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",

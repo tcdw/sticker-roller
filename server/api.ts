@@ -1,43 +1,24 @@
 import { stat } from 'node:fs/promises';
 import { basename, join, resolve, sep } from 'node:path';
-import { DEFAULT_MODEL, DEFAULT_REMOVE_BACKGROUND, SUPPORTED_MODELS } from '../src/config';
 import type { Repositories } from '../src/db/repositories';
-import { AUTO, isSupportedAspectRatio, isSupportedImageSize } from '../src/image-options';
+import { InputError } from '../src/errors';
+import { isUuid } from '../src/ids';
+import { MAX_COUNT, MAX_PROMPT, validateOptions } from '../src/jobs/options';
+import { resolveJobInput } from '../src/jobs/references';
+import { MAX_UPLOAD_BYTES, sniffImageMimeType } from '../src/uploads';
 
-const idPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const MAX_PROMPT = 10000;
-const MAX_COUNT = 20;
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const jsonHeaders = { 'content-type': 'application/json; charset=utf-8' };
 
 type Deps = { repositories: Repositories; outputDir?: string };
 const response = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: jsonHeaders });
 const error = (status: number, code: string, message: string) => response({ error: { code, message } }, status);
 const ok = (data: unknown, status = 200) => response(data, status);
-function validId(value: string | undefined): value is string {
-  return !!value && idPattern.test(value);
-}
+const validId = isUuid;
 function text(value: unknown, field: string, max = 200): string {
   if (typeof value !== 'string' || !value.trim() || value.length > max) {
     throw new InputError(`${field} is required and must be at most ${max} characters`);
   }
   return value.trim();
-}
-class InputError extends Error {}
-const IMAGE_SIGNATURES: Array<{ mimeType: string; test: (bytes: Uint8Array) => boolean }> = [
-  {
-    mimeType: 'image/png',
-    test: (b) => b.length > 3 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47,
-  },
-  { mimeType: 'image/jpeg', test: (b) => b.length > 2 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
-  {
-    mimeType: 'image/webp',
-    test: (b) => b.length > 11 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50,
-  },
-];
-/** Trust bytes over the client-provided content type when deciding what was uploaded. */
-function sniffImageMimeType(bytes: Uint8Array): string | null {
-  return IMAGE_SIGNATURES.find((signature) => signature.test(bytes))?.mimeType ?? null;
 }
 function parseMetadata(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -86,39 +67,6 @@ function publicJobs(repo: Repositories, limit: number, offset: number) {
   }));
 }
 
-function validateOptions(input: Record<string, unknown>) {
-  const options: Record<string, unknown> = {};
-  const model = input.model ?? DEFAULT_MODEL;
-  if (typeof model !== 'string' || !SUPPORTED_MODELS.includes(model)) {
-    throw new InputError('invalid model');
-  }
-  const aspectRatio = input.aspectRatio;
-  if (
-    aspectRatio !== undefined &&
-    (typeof aspectRatio !== 'string' || (aspectRatio !== AUTO && !isSupportedAspectRatio(model, aspectRatio)))
-  ) {
-    throw new InputError('invalid aspectRatio for model');
-  }
-  const imageSize = input.imageSize;
-  if (
-    imageSize !== undefined &&
-    (typeof imageSize !== 'string' || (imageSize !== AUTO && !isSupportedImageSize(model, imageSize)))
-  ) {
-    throw new InputError('invalid imageSize for model');
-  }
-  if (input.removeBackground !== undefined && typeof input.removeBackground !== 'boolean') {
-    throw new InputError('invalid removeBackground');
-  }
-  options.model = model;
-  if (aspectRatio !== undefined && aspectRatio !== AUTO) {
-    options.aspectRatio = aspectRatio;
-  }
-  if (imageSize !== undefined && imageSize !== AUTO) {
-    options.imageSize = imageSize;
-  }
-  options.removeBackground = input.removeBackground ?? DEFAULT_REMOVE_BACKGROUND;
-  return options;
-}
 export function createApiHandler(deps: Deps) {
   const repo = deps.repositories;
   const outputDir = resolve(deps.outputDir ?? process.env.OUTPUT_DIR ?? join(import.meta.dir, '../output'));
@@ -266,47 +214,23 @@ export function createApiHandler(deps: Deps) {
           if (!Array.isArray(rawRefs) || rawRefs.some((v) => !validId(String(v)))) {
             throw new InputError('referencedAssetIds must contain valid asset IDs');
           }
-          const refs = rawRefs.map((v) => {
-            const a = repo.getAsset(String(v));
-            if (!a || a.archivedAt) {
-              throw new InputError('asset not found');
-            }
-            return {
-              id: a.id,
-              name: a.name,
-              prompt: a.prompt,
-              category: a.category,
-              metadata: JSON.parse(a.metadata || '{}'),
-            };
-          });
           const rawImageIds = b.referencedImageIds ?? [];
           if (!Array.isArray(rawImageIds) || rawImageIds.some((v) => !validId(String(v)))) {
             throw new InputError('referencedImageIds must contain valid upload IDs');
           }
-          const imageRefs = rawImageIds.map((v) => {
-            const u = repo.getUpload(String(v));
-            if (!u || u.archivedAt) {
-              throw new InputError('referenced image not found');
-            }
-            return { kind: 'image' as const, id: u.id, name: u.name, mimeType: u.mimeType };
+          const resolved = resolveJobInput(repo, {
+            authoredPrompt,
+            referencedAssetIds: rawRefs,
+            referencedImageIds: rawImageIds,
           });
-          // Reference images travel as provider content parts, so replace their
-          // inline tokens with the plain image name in the expanded prompt.
-          let promptText = authoredPrompt;
-          for (const ref of imageRefs) {
-            promptText = promptText.replace(new RegExp(`!\\[[^\\]]*\\]\\(image:${ref.id}\\)`, 'g'), () => ref.name);
-          }
-          const expandedPrompt = refs.length
-            ? `${promptText}\n\n${refs.map((r) => `[${r.name}]\n${r.prompt}`).join('\n\n')}`
-            : promptText;
           const options = validateOptions(b);
           const job = repo.createJob({
-            assetId: refs[0]?.id,
-            assetName: refs[0]?.name ?? 'text',
+            assetId: resolved.assetId,
+            assetName: resolved.assetName,
             authoredPrompt,
-            referencedAssets: refs,
-            referencedImages: imageRefs,
-            prompt: expandedPrompt,
+            referencedAssets: resolved.assetRefs,
+            referencedImages: resolved.imageRefs,
+            prompt: resolved.prompt,
             options,
             count,
           });

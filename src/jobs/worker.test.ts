@@ -206,3 +206,37 @@ describe('durable generation worker', () => {
     db.close();
   });
 });
+
+describe('job-scoped draining', () => {
+  test('drain(jobId) never claims items that belong to another job', async () => {
+    const db = await openDatabase(':memory:');
+    const repo = createRepositories(db.db);
+    const mine = repo.createJob({ assetName: 'mine', prompt: 'p', options: {}, count: 2 });
+    const theirs = repo.createJob({ assetName: 'theirs', prompt: 'p', options: {}, count: 1 });
+    const worker = createWorker({
+      repositories: repo,
+      outputDir: `/tmp/sticker-worker-${crypto.randomUUID()}`,
+      generator: async () => ({ success: true, imageBuffer: Buffer.from('png'), mimeType: 'image/png' }),
+    });
+    await worker.drain(mine.id);
+    expect(repo.getJob(mine.id).items.map((item) => item.status)).toEqual(['succeeded', 'succeeded']);
+    expect(repo.getJob(theirs.id).items.map((item) => item.status)).toEqual(['queued']);
+    db.close();
+  });
+
+  test('claimNextItem() without a job id still drains every queued item', async () => {
+    const db = await openDatabase(':memory:');
+    const repo = createRepositories(db.db);
+    const first = repo.createJob({ assetName: 'first', prompt: 'p', options: {}, count: 1 });
+    const second = repo.createJob({ assetName: 'second', prompt: 'p', options: {}, count: 1 });
+    const worker = createWorker({
+      repositories: repo,
+      outputDir: `/tmp/sticker-worker-${crypto.randomUUID()}`,
+      generator: async () => ({ success: true, imageBuffer: Buffer.from('png'), mimeType: 'image/png' }),
+    });
+    await worker.drain();
+    expect(repo.getJob(first.id).items.map((item) => item.status)).toEqual(['succeeded']);
+    expect(repo.getJob(second.id).items.map((item) => item.status)).toEqual(['succeeded']);
+    db.close();
+  });
+});

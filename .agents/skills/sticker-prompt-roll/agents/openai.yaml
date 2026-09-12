@@ -1,0 +1,4 @@
+interface:
+  display_name: "贴纸提示词迭代"
+  short_description: "生成贴纸图并迭代提示词：查素材、看图、单变量改词、按退出码分流"
+  default_prompt: "用 $sticker-prompt-roll 迭代贴纸提示词：先查素材库，再生成一张看效果，然后只改一处重跑。"

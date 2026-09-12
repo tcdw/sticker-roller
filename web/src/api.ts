@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { AUTO, DEFAULT_MODEL, resolveAspectRatio, resolveImageSize, SUPPORTED_MODELS } from '../../src/image-options';
+import { referencedIdsFromPrompt } from '../../src/prompt-tokens';
 import type { AssetRow, FileRow, ItemRow, JobRow, UploadSummary } from '../../src/web-types';
 export type JobReference = { kind?: string; id: string; name?: string };
 export type JobSummary = JobRow & {
@@ -44,33 +45,14 @@ export function optionsFromSnapshot(snapshot: unknown, count?: number): Options 
     count: Math.min(MAX_COUNT, Math.max(1, snapshotCount ?? sourceCount)),
   };
 }
-export const ASSET_TOKEN = /@\[([^\]]+)\]\(asset:([^)]+)\)/g;
-export function referencedIdsFromPrompt(prompt: string, assets: AssetRow[]): string[] {
-  const known = new Set(assets.map((asset) => asset.id));
-  return [
-    ...new Set(
-      Array.from(prompt.matchAll(ASSET_TOKEN), (match) => match[2]).filter((id): id is string =>
-        Boolean(id && known.has(id)),
-      ),
-    ),
-  ];
-}
-export const IMAGE_TOKEN = /!\[([^\]]+)\]\(image:([^)]+)\)/g;
-export function referencedImageIdsFromPrompt(prompt: string, uploads: UploadSummary[]): string[] {
-  const known = new Set(uploads.map((upload) => upload.id));
-  return [
-    ...new Set(
-      Array.from(prompt.matchAll(IMAGE_TOKEN), (match) => match[2]).filter((id): id is string =>
-        Boolean(id && known.has(id)),
-      ),
-    ),
-  ];
-}
-/** Uploaded images the current prompt does not reference, so the next job would silently skip them. */
-export function unreferencedUploads(prompt: string, uploads: UploadSummary[]): UploadSummary[] {
-  const referenced = new Set(referencedImageIdsFromPrompt(prompt, uploads));
-  return uploads.filter((upload) => !referenced.has(upload.id));
-}
+// Token parsing lives in a shared, node-free module so the CLI resolves the same tokens the UI does.
+export {
+  ASSET_TOKEN,
+  IMAGE_TOKEN,
+  referencedIdsFromPrompt,
+  referencedImageIdsFromPrompt,
+  unreferencedUploads,
+} from '../../src/prompt-tokens';
 export interface ReusedDraft {
   prompt: string;
   referencedAssetIds: string[];

@@ -58,11 +58,12 @@ export class GenerationWorker {
   recover(): void {
     this.repo.recoverStale(new Date(Date.now() - this.staleAfterMs).toISOString());
   }
-  async runOnce(): Promise<boolean> {
+  /** Claim and process one item. Pass `jobId` to only take work from that job. */
+  async runOnce(jobId?: string): Promise<boolean> {
     if (this.stopped || this.active) {
       return false;
     }
-    const item = this.repo.claimNextItem();
+    const item = this.repo.claimNextItem(jobId);
     if (!item) {
       return false;
     }
@@ -72,8 +73,8 @@ export class GenerationWorker {
     await this.active;
     return true;
   }
-  async drain(): Promise<void> {
-    while (await this.runOnce()) {}
+  async drain(jobId?: string): Promise<void> {
+    while (await this.runOnce(jobId)) {}
   }
   private async runLoop(): Promise<void> {
     while (!this.stopped) {

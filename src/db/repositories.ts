@@ -216,12 +216,13 @@ export function createRepositories(db: Db) {
       db.select().from(requests).where(eq(requests.itemId, itemId)).orderBy(desc(requests.attempt)).all(),
     listJobs: (limit = 50, offset = 0) =>
       db.select().from(jobs).orderBy(desc(jobs.createdAt)).limit(limit).offset(offset).all(),
-    claimNextItem: () =>
+    /** Claim the oldest queued item, optionally restricted to one job so a caller never drains another job's work. */
+    claimNextItem: (jobId?: string) =>
       db.transaction((tx) => {
         const candidate = tx
           .select()
           .from(items)
-          .where(eq(items.status, 'queued'))
+          .where(jobId ? and(eq(items.status, 'queued'), eq(items.jobId, jobId)) : eq(items.status, 'queued'))
           .orderBy(asc(items.ordinal))
           .limit(1)
           .get();
