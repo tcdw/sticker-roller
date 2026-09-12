@@ -35,3 +35,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .DS_Store
 
 data/
+
+# agent scratch space: verification artifacts (logs, pid files, exported images)
+.temp/
