@@ -201,6 +201,50 @@ describe('web API', () => {
     ).toBe(400);
     db.close();
   });
+  test('lists history as one page plus the total the pager needs', async () => {
+    const db = await openDatabase(':memory:');
+    const repo = createRepositories(db.db);
+    const api = createApiHandler({ repositories: repo });
+    const created: string[] = [];
+    for (let n = 1; n <= 12; n++) {
+      const response = await api(request('POST', '/api/jobs', { prompt: `job ${n}` }));
+      created.push(((await response.json()) as { id: string }).id);
+    }
+
+    type Page = {
+      items: Array<{ id: string; createdAt: string; options: Record<string, unknown>; references: unknown[] }>;
+      total: number;
+      limit: number;
+      offset: number;
+    };
+    const first = (await (await api(request('GET', '/api/jobs?limit=10&offset=0'))).json()) as Page;
+    expect(first).toMatchObject({ total: 12, limit: 10, offset: 0 });
+    expect(first.items).toHaveLength(10);
+    // Newest first, and every page keeps the same public job shape the detail route returns.
+    const stamps = first.items.map((job) => job.createdAt);
+    expect([...stamps].sort().reverse()).toEqual(stamps);
+    expect(first.items.every((job) => typeof job.options === 'object' && Array.isArray(job.references))).toBe(true);
+
+    const second = (await (await api(request('GET', '/api/jobs?limit=10&offset=10'))).json()) as Page;
+    expect(second.items).toHaveLength(2);
+    expect(second.total).toBe(12);
+    // Pages partition the table: nothing repeats and nothing goes missing.
+    const paged = [...first.items, ...second.items].map((job) => job.id);
+    expect(new Set(paged).size).toBe(12);
+    expect([...paged].sort()).toEqual([...created].sort());
+
+    // An unpaged request still reports the same total, and only the offset changes the slice.
+    const all = (await (await api(request('GET', '/api/jobs'))).json()) as Page;
+    expect(all).toMatchObject({ total: 12, limit: 50, offset: 0 });
+    expect(all.items).toHaveLength(12);
+
+    const invalid = await api(request('GET', '/api/jobs?limit=0'));
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toHaveProperty('error.code', 'INVALID_INPUT');
+    expect((await api(request('GET', '/api/jobs?offset=-1'))).status).toBe(400);
+    db.close();
+  });
+
   test('registered output blocks traversal and missing files', async () => {
     const db = await openDatabase(':memory:');
     const repo = createRepositories(db.db);

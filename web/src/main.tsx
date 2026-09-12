@@ -1,7 +1,25 @@
-import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  QueryClient,
+  QueryClientProvider,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { createRootRoute, createRoute, createRouter, Outlet, RouterProvider } from '@tanstack/react-router';
-import { Download, ImagePlus, Library, RefreshCw, RotateCcw, Settings2 } from 'lucide-react';
-import React, { useRef, useState } from 'react';
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  Download,
+  ImagePlus,
+  Library,
+  RefreshCw,
+  RotateCcw,
+  Settings2,
+} from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   AUTO,
@@ -14,9 +32,11 @@ import type { AssetRow, FileRow, UploadSummary } from '../../src/web-types';
 import {
   api,
   draftFromJob,
+  HISTORY_PAGE_SIZE,
   isActive,
   type JobSummary,
   type Options,
+  pageCount,
   type ReusedDraft,
   referencedIdsFromPrompt,
   referencedImageIdsFromPrompt,
@@ -62,10 +82,14 @@ function Workspace() {
   const draft = useDraft();
   const assets = useQuery({ queryKey: ['assets'], queryFn: api.assets });
   const uploads = useQuery({ queryKey: ['uploads'], queryFn: api.uploads });
+  // 1-based history page; declared before the query that keys on it.
+  const [historyPage, setHistoryPage] = useState(1);
   const jobs = useQuery({
-    queryKey: ['jobs'],
-    queryFn: api.jobs,
-    refetchInterval: (query) => (query.state.data?.some((job) => isActive(job.status)) ? 1500 : false),
+    queryKey: ['jobs', historyPage],
+    queryFn: () => api.jobs(historyPage),
+    // Keep the current page visible while the next one loads, so paging never flashes a skeleton.
+    placeholderData: keepPreviousData,
+    refetchInterval: (query) => (query.state.data?.items.some((job) => isActive(job.status)) ? 1500 : false),
   });
   const [dialog, setDialog] = useState<'create' | AssetRow | null>(null);
   const [params, setParams] = useState(false);
@@ -207,6 +231,8 @@ function Workspace() {
         ...draft.options,
       }),
     onSuccess: () => {
+      // A new job is always the newest row, so it lives on page 1.
+      setHistoryPage(1);
       qc.invalidateQueries({ queryKey: ['jobs'] });
       draft.clearPrompt();
       setNotice('任务已提交；提示词已清空，模型、比例、分辨率和图片素材保持不变');
@@ -416,8 +442,12 @@ function Workspace() {
             </Alert>
           )}
           <History
-            jobs={jobs.data ?? []}
+            jobs={jobs.data?.items ?? []}
+            total={jobs.data?.total ?? 0}
+            page={historyPage}
             loading={jobs.isLoading}
+            refreshing={jobs.isPlaceholderData}
+            onPageChange={setHistoryPage}
             onReuse={reuseJob}
             onUseOutput={(file, ordinal) => useOutputAsReference.mutate({ file, ordinal })}
             outputPending={useOutputAsReference.isPending}
@@ -657,19 +687,46 @@ function ParametersDialog({
 
 function History({
   jobs,
+  total,
+  page,
   loading,
+  refreshing,
+  onPageChange,
   onReuse,
   onUseOutput,
   outputPending,
 }: {
   jobs: JobSummary[];
+  total: number;
+  page: number;
   loading: boolean;
+  /** The visible page is being replaced by another one; dim it instead of emptying the list. */
+  refreshing: boolean;
+  onPageChange: (page: number) => void;
   onReuse: (job: JobSummary) => void;
   onUseOutput: (file: FileRow, ordinal: number) => void;
   outputPending: boolean;
 }) {
+  const pages = pageCount(total);
+  const sectionRef = useRef<HTMLElement>(null);
+  // Paging while scrolled deep into the list would otherwise leave the viewport past the results.
+  // The scroll is deferred until the requested page is actually rendered: swapping in a shorter
+  // list cancels an in-flight smooth scroll, which would strand the viewport at the page bottom.
+  const pendingScroll = useRef<number | null>(null);
+  const goToPage = (next: number) => {
+    pendingScroll.current = next;
+    onPageChange(next);
+  };
+  useEffect(() => {
+    // `refreshing` covers a page that had to be fetched; the page check covers one served from cache.
+    if (pendingScroll.current === null || refreshing || pendingScroll.current !== page) {
+      return;
+    }
+    pendingScroll.current = null;
+    sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [page, refreshing]);
   return (
-    <section className="space-y-4" aria-labelledby="history-heading">
+    <section ref={sectionRef} className="scroll-mt-20 space-y-4" aria-labelledby="history-heading">
       <div className="flex items-center justify-between">
         <div>
           <h2 id="history-heading" className="text-xl font-semibold tracking-tight">
@@ -677,7 +734,7 @@ function History({
           </h2>
           <p className="text-sm text-muted-foreground">任务在浏览器关闭后仍会继续执行</p>
         </div>
-        <Badge variant="secondary">{jobs.length} 个任务</Badge>
+        <Badge variant="secondary">共 {total} 个任务</Badge>
       </div>
       {loading && (
         <div className="grid gap-4">
@@ -692,9 +749,34 @@ function History({
           </CardContent>
         </Card>
       )}
-      {jobs.map((job) => (
-        <JobCard key={job.id} job={job} onReuse={onReuse} onUseOutput={onUseOutput} outputPending={outputPending} />
-      ))}
+      <div className={`space-y-4 ${refreshing ? 'opacity-60 transition-opacity' : ''}`}>
+        {jobs.map((job) => (
+          <JobCard key={job.id} job={job} onReuse={onReuse} onUseOutput={onUseOutput} outputPending={outputPending} />
+        ))}
+      </div>
+      {(pages > 1 || page > 1) && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            第 {Math.min(page, pages)} / {pages} 页 · 每页 {HISTORY_PAGE_SIZE} 条
+          </p>
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="outline" size="sm" disabled={page <= 1} onClick={() => goToPage(page - 1)}>
+              <ChevronLeft />
+              上一页
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page >= pages}
+              onClick={() => goToPage(page + 1)}
+            >
+              下一页
+              <ChevronRight />
+            </Button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -706,6 +788,55 @@ const statusLabels: Record<string, string> = {
   failed: '失败',
   cancelled: '已取消',
 };
+
+/** Two lines of `leading-6` text: the height a collapsed history prompt occupies. */
+const COLLAPSED_PROMPT_HEIGHT = 48;
+
+/**
+ * A history prompt is frequently a long wall of text that pushes the generated images out of
+ * view, so it starts collapsed to two lines and expands on demand.
+ */
+function JobPrompt({ prompt }: { prompt: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  const textRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    const element = textRef.current;
+    if (!element) {
+      return;
+    }
+    // The paragraph is never clamped, so its height is always the full text height. The observer
+    // therefore covers every case that can change whether the prompt overflows — different text
+    // and a narrower card — without listing `prompt` as a dependency.
+    const measure = () => setOverflowing(element.offsetHeight > COLLAPSED_PROMPT_HEIGHT);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <div className="space-y-1">
+      <div className={overflowing && !expanded ? 'max-h-12 overflow-hidden' : undefined}>
+        <p ref={textRef} className="whitespace-pre-wrap text-sm leading-6">
+          {prompt}
+        </p>
+      </div>
+      {overflowing && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="-ml-3 text-muted-foreground"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? <ChevronUp /> : <ChevronDown />}
+          {expanded ? '收起提示词' : '展开提示词全文'}
+        </Button>
+      )}
+    </div>
+  );
+}
 
 function JobCard({
   job,
@@ -760,10 +891,12 @@ function JobCard({
         )}
       </CardHeader>
       <CardContent className="space-y-4">
-        <p className="whitespace-pre-wrap text-sm leading-6">{job.promptSnapshot}</p>
+        <JobPrompt prompt={job.promptSnapshot} />
         <Separator />
         {detail.isLoading && <Skeleton className="h-36 w-full" />}
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
+        {/* Fixed columns keep thumbnails the same size for every job: a 4-image job
+            leaves two cells empty instead of stretching four across the row. */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
           {items.map((item) => {
             const file = item.files?.[0];
             const source = file ? `/api/output/${encodeURIComponent(file.fileName)}` : '';

@@ -58,13 +58,18 @@ function publicJob(repo: Repositories, id: string) {
     events: result.events,
   };
 }
-function publicJobs(repo: Repositories, limit: number, offset: number) {
-  return repo.listJobs(limit, offset).map((job) => ({
+/**
+ * One page of history plus the total the pager needs, so the client never has to
+ * request the whole table to know how many pages exist.
+ */
+function publicJobsPage(repo: Repositories, limit: number, offset: number) {
+  const items = repo.listJobs(limit, offset).map((job) => ({
     ...job,
     options: JSON.parse(job.optionsSnapshot),
     authoredPrompt: job.authoredPromptSnapshot,
     references: JSON.parse(job.referencesSnapshot),
   }));
+  return { items, total: repo.countJobs(), limit, offset };
 }
 
 export function createApiHandler(deps: Deps) {
@@ -198,7 +203,7 @@ export function createApiHandler(deps: Deps) {
           if (!Number.isInteger(limit) || limit < 1 || limit > 100 || !Number.isInteger(offset) || offset < 0) {
             throw new InputError('invalid pagination');
           }
-          return ok(publicJobs(repo, limit, offset));
+          return ok(publicJobsPage(repo, limit, offset));
         }
         if (req.method === 'POST' && parts.length === 2) {
           const b = await body(req);

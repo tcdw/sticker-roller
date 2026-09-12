@@ -83,6 +83,12 @@ export function draftFromJob(job: JobSummary, assets: AssetRow[], uploads: Uploa
     missingImageNames,
   };
 }
+/** History is paged on the server, so the client always requests exactly one page. */
+export const HISTORY_PAGE_SIZE = 10;
+export type JobPage = { items: JobSummary[]; total: number; limit: number; offset: number };
+/** Total number of pages for a job count; an empty history still reports one page. */
+export const pageCount = (total: number, size = HISTORY_PAGE_SIZE) => Math.max(1, Math.ceil(total / size));
+export const pageOffset = (page: number, size = HISTORY_PAGE_SIZE) => (page - 1) * size;
 export const api = {
   async request<T>(path: string, init?: RequestInit): Promise<T> {
     const r = await fetch(path, { ...init, headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) } });
@@ -98,7 +104,7 @@ export const api = {
   updateAsset: (id: string, body: Partial<Pick<AssetRow, 'name' | 'prompt' | 'category'>>) =>
     api.request<AssetRow>(`/api/assets/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   archiveAsset: (id: string) => api.request<AssetRow>(`/api/assets/${id}`, { method: 'DELETE', body: '{}' }),
-  jobs: () => api.request<JobSummary[]>('/api/jobs'),
+  jobs: (page = 1) => api.request<JobPage>(`/api/jobs?limit=${HISTORY_PAGE_SIZE}&offset=${pageOffset(page)}`),
   job: (id: string) => api.request<Job>(`/api/jobs/${id}`),
   createJob: (
     body: { authoredPrompt: string; referencedAssetIds: string[]; referencedImageIds?: string[] } & Options,

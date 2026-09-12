@@ -72,9 +72,12 @@ Visual styling uses the standard shadcn/ui design language and generated Tailwin
 
 ### Task history and results
 
+- History is paged on the server at 10 jobs per page, newest first; the client requests one page and shows `第 x / y 页` with previous/next controls and a total count.
+- Submitting a job returns the view to page 1, where the new job appears.
 - Each task has a timestamp and requested count, e.g. `2026-09-01 20:30 (6 张)`.
+- The stored prompt starts collapsed to two lines so results stay in view, with a `展开提示词全文` / `收起提示词` toggle; the toggle appears only when the prompt actually overflows two lines.
 - Active tasks show durable progress and current item state.
-- Results are displayed as a wrapping grid of image cards, sized to fit the available width.
+- Results are displayed as a grid with a fixed number of columns per row, so an image is always the same size regardless of how many the task produced.
 - Failed items show their error and retry action; successful items show preview/download.
 
 ## Interactions
@@ -89,6 +92,8 @@ Visual styling uses the standard shadcn/ui design language and generated Tailwin
 | Submit task | Toolbar | Sends composed prompt and referenced asset IDs; creates a durable job. Clears the prompt only, keeping toolbar settings and uploaded images. |
 | Submit with unreferenced images | Toolbar | Confirms first when uploaded images exist that the prompt does not reference; the list uses the same parser as submission. |
 | Reuse history task | Task | Restores that task's authored prompt, generation options, and reference images in one action; asks first when the composer holds different text. |
+| Expand/collapse prompt | History task card | Toggles the stored prompt between two lines and full height; the control is hidden for prompts that already fit. |
+| Page history | History | Loads one server page of 10 jobs; previous/next are disabled at the ends and the view scrolls back to the history heading. |
 | Use result as reference | Result card | Saves a generated image as a new image material and inserts its reference token into the prompt. |
 | Refresh/reopen | Whole page | Reloads assets/jobs from SQLite and resumes active job polling. |
 | Cancel | Active task | Cancels queued/not-started items only. |
@@ -103,13 +108,13 @@ Visual styling uses the standard shadcn/ui design language and generated Tailwin
 - Busy task: progress count, active item indicator, disabled duplicate submit.
 - Failed item: error card with retry, no fake image.
 - API error: inline error banner with retry action.
-- Narrow window: sidebar becomes a collapsible materials drawer; toolbar wraps; results reduce to one column.
+- Narrow window: sidebar becomes a collapsible materials drawer; toolbar wraps; the result grid drops to fewer columns (6 → 4 → 3 → 2) without stretching the images.
 
 ## Responsive / Size Constraints
 
 - Desktop target: at least 1100px wide; sidebar 260–320px.
 - The prompt composer uses the majority of the horizontal canvas and a minimum height of 180px.
-- Result grid uses `repeat(auto-fit, minmax(150px, 1fr))`.
+- Result grid reserves a fixed number of columns per row — 6 on `xl` and wider, 4 on `md`/`lg`, 3 on `sm`, 2 below — so a task with fewer images leaves the remaining cells empty instead of stretching its images to fill the row.
 - At widths below 760px, the material drawer can collapse above the composer; submit remains visible and toolbar controls wrap.
 
 ## Component Tree

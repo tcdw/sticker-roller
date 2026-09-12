@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, asc, desc, eq, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, isNull, lt, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { nowUtc } from './client';
 import {
@@ -216,6 +216,8 @@ export function createRepositories(db: Db) {
       db.select().from(requests).where(eq(requests.itemId, itemId)).orderBy(desc(requests.attempt)).all(),
     listJobs: (limit = 50, offset = 0) =>
       db.select().from(jobs).orderBy(desc(jobs.createdAt)).limit(limit).offset(offset).all(),
+    /** Total job count for the same ordering `listJobs` paginates over. */
+    countJobs: () => db.select({ value: count() }).from(jobs).get()?.value ?? 0,
     /** Claim the oldest queued item, optionally restricted to one job so a caller never drains another job's work. */
     claimNextItem: (jobId?: string) =>
       db.transaction((tx) => {

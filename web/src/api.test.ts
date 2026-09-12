@@ -2,9 +2,13 @@ import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { DEFAULT_MODEL } from '../../src/image-options';
 import type { AssetRow, UploadSummary } from '../../src/web-types';
 import {
+  api,
   draftFromJob,
+  HISTORY_PAGE_SIZE,
   type JobSummary,
   optionsFromSnapshot,
+  pageCount,
+  pageOffset,
   referencedIdsFromPrompt,
   referencedImageIdsFromPrompt,
   saveAsset,
@@ -91,6 +95,30 @@ describe('optionsFromSnapshot', () => {
     expect(optionsFromSnapshot({ count: 99 }).count).toBe(20);
     expect(optionsFromSnapshot({ count: 0 }).count).toBe(1);
     expect(optionsFromSnapshot({}, 2).count).toBe(2);
+  });
+});
+describe('history paging', () => {
+  test('turns a job total into the page count the pager shows', () => {
+    expect(HISTORY_PAGE_SIZE).toBe(10);
+    expect(pageCount(0)).toBe(1);
+    expect(pageCount(1)).toBe(1);
+    expect(pageCount(10)).toBe(1);
+    expect(pageCount(11)).toBe(2);
+    expect(pageCount(19)).toBe(2);
+    expect(pageCount(20)).toBe(2);
+    expect(pageCount(21)).toBe(3);
+  });
+  test('translates a page number into the offset the API expects', () => {
+    expect(pageOffset(1)).toBe(0);
+    expect(pageOffset(2)).toBe(10);
+    expect(pageOffset(3, 5)).toBe(10);
+  });
+  test('requests exactly one page and keeps the reported total', async () => {
+    const fetchMock = mock(() => Promise.resolve(Response.json({ items: [], total: 12, limit: 10, offset: 10 })));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const page = await api.jobs(2);
+    expect(fetchMock).toHaveBeenCalledWith('/api/jobs?limit=10&offset=10', expect.objectContaining({}));
+    expect(page.total).toBe(12);
   });
 });
 describe('draftFromJob', () => {
