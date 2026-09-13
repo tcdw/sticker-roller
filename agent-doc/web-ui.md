@@ -21,7 +21,8 @@
 
 - 素材按 `category` 分组，标题带计数；分类**不**从 prompt 内容推断。
 - 素材卡片单击把素材引用 token（`@` + 方括号名字 + `(asset:<id>)`）插到光标处，不覆盖已有正文、不自动提交。
-- 工具条控件与 `options` 一一对应：`model` / `aspectRatio` / `imageSize` / `removeBackground` / `count`。
+- 工具条使用 `ProviderOptionsFields` 渲染渠道、模型和专属字段，背景策略独立，张数在更多参数中。草稿为 `{ selection, count }`；跨渠道重建专属参数，同渠道切模型保留仍兼容的字段和背景，仅清理不兼容值并提示，不改 prompt、引用和张数。更多参数只返回张数，应用时合并当前草稿，不写回打开弹窗时的渠道快照。新草稿固定从 Google 开始，不根据环境自动切换；仅配置 Gateway 时需显式选择它。
+- `/api/image-providers` 提供安全本地配置状态；未配置渠道可浏览，提交禁用，服务端仍独立检查。该状态不是账户可用性测试。
 - 结果网格列数固定（xl 6 列、md/lg 4 列、sm 3 列、更窄 2 列），图少时留空格而不是拉伸。
 
 ## 状态与数据流
@@ -39,7 +40,7 @@
 
 - **`web/src/api.ts` 不是 CRUD 层**：它是 API 客户端 + 纯函数 + store 的混合体。历史任务的还原逻辑（`optionsFromSnapshot` / `draftFromJob`）就在这里，改「复用历史任务」要改这个文件，不是 `main.tsx`。
 - **只 import 纯 TS 共享模块**：`src/prompt-tokens.ts`、`src/image-options.ts`、`src/web-types.ts`。它们不能引入 `node:*`（前端直接打包）。需要新共享逻辑就新建纯 TS 模块，别顺手 import `src/config.ts`。
-- **`optionsFromSnapshot()` 会丢旧值**：模型不在 `SUPPORTED_MODELS` 里、或比例/尺寸不被该模型支持时回退成 `auto`。这是刻意的降级，避免复用历史任务时提交非法参数。
+- **`optionsFromSnapshot()` 不再静默降级**：未知版本、渠道、模型或字段明确不可复用；单条失败通过通知显示，不使历史列表崩溃。旧快照使用服务端返回的当前 legacy 渠道，并显示这不是历史渠道事实。结构比较使用 `selectionsEqual`。
 - **复用历史任务要处理已失效的参考图**：`draftFromJob()` 会把「引用了但已归档/删除」的图片 token 从 prompt 里剥掉，并返回 `missingImageNames` 供提示用户。别把这段逻辑删掉——留着死 token 会让提交直接失败。
 - **未引用图片要先确认**：提交器里有图但 prompt 没引用时先弹确认（`unreferencedUploads()` 用的是和提交同一个解析器），避免用户以为图会被用上。
 - **上传走 multipart**：`api.createUpload` 不能带 JSON content-type（浏览器要自己设 boundary），和 `api.request` 的默认行为不同。

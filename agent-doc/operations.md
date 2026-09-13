@@ -45,7 +45,11 @@ DATABASE_PATH=.temp/probe.sqlite OUTPUT_DIR=.temp/out PORT=3199 bun run server/i
 
 ## 配置变更
 
-改 `.env` 或环境变量后**必须重启进程**——配置在启动时读入，没有热重载。改完确认方式：`/api/health` 能通，且新起的任务是按新配置跑的（例如换 `OUTPUT_DIR` 后新产出落在新目录）。
+改 `.env` 或环境变量后**必须重启进程**。先停止 worker 并等待在途请求结束，再部署渠道改动。`/api/health` 验证服务；`/api/image-providers` 仅验证本地配置，不发生成请求。
+
+v2 任务固定渠道，改其他渠道凭证不会影响它；改选定渠道 endpoint 会影响它之后执行。legacy 任务没有历史渠道记录，仍按当前 Gateway/Google 优先级处理。不批量重写旧快照，不自动将 preview 换正式版。未知配置明确失败，换渠道应新建任务。
+
+新 OpenAI/OpenRouter adapter 不重试；180 秒超时不证明远端未完成/未计费。Google/Gateway 保留原 SDK 默认重试。取消与恢复边界不变，仍不承诺 exactly-once。真实透明边缘、账户和图像质量验收必须另行授权。
 
 ## 日志
 

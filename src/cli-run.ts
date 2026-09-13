@@ -7,7 +7,15 @@ import { join, resolve } from 'node:path';
 import type { ItemStatus, Repositories } from './db/repositories';
 import { InputError } from './errors';
 import { isUuid } from './ids';
-import { MAX_COUNT, MAX_PROMPT, validateOptions } from './jobs/options';
+import { serializeSelection } from './image-providers';
+import type { ProviderEnv } from './image-providers/server/contracts';
+import {
+  MAX_COUNT,
+  MAX_PROMPT,
+  normalizeJobSelection,
+  requireSelectionConfigured,
+  validateGenerationInput,
+} from './jobs/options';
 import { resolveAssetRef, resolveJobInput, resolveUploadRef } from './jobs/references';
 import { createWorker, type SingleImageGenerator } from './jobs/worker';
 import { ASSET_TOKEN, IMAGE_TOKEN, referencedIdsFromPrompt, referencedImageIdsFromPrompt } from './prompt-tokens';
@@ -21,6 +29,10 @@ export interface GenerateInput {
   /** Local image paths or library ids/names; equivalents of the web `referencedImageIds` field. */
   images?: string[];
   count?: number;
+  providerId?: string;
+  options?: Record<string, unknown>;
+  background?: string;
+  selection?: unknown;
   model?: string;
   aspectRatio?: string;
   imageSize?: string;
@@ -47,6 +59,7 @@ export interface GenerationOutcome {
 
 export interface GenerationDeps {
   /** Injected by tests so a run never calls the real provider. */
+  env?: ProviderEnv;
   generator?: SingleImageGenerator;
   onProgress?: (done: number, total: number) => void;
 }
@@ -169,12 +182,11 @@ export async function runGeneration(
     { authoredPrompt: normalizedPrompt, referencedAssetIds: assetIds, referencedImageIds: imageIds },
     { allowNames: true },
   );
-  const options = validateOptions({
-    model: input.model,
-    aspectRatio: input.aspectRatio,
-    imageSize: input.imageSize,
-    removeBackground: input.removeBackground,
-  });
+  const env = deps.env ?? process.env;
+  const selection = normalizeJobSelection({ ...input }, env);
+  validateGenerationInput(selection, resolved.prompt, resolved.imageRefs.length);
+  requireSelectionConfigured(selection, env);
+  const options = serializeSelection(selection);
   const job = repo.createJob({
     assetId: resolved.assetId,
     assetName: resolved.assetName,
@@ -189,7 +201,7 @@ export async function runGeneration(
     throw new InputError('failed to create the generation job');
   }
   const outputDir = input.out ? resolve(input.out) : defaultOutputDir();
-  const worker = createWorker({ repositories: repo, outputDir, generator: deps.generator });
+  const worker = createWorker({ repositories: repo, outputDir, generator: deps.generator, env });
   const total = repo.getJob(job.id).items.length;
   let done = 0;
   // No stale recovery here: a CLI run must not rewrite the state of jobs it does not own.

@@ -16,6 +16,12 @@
 - group 下的未知子命令（如 `asset foo`）报错，**不会**静默回退去生成图。
 - 没有参数时退出码 2 并打印 help——绝不「什么都不做却退出 0」，agent 会把它读成生成成功。
 
+## 渠道与专属参数
+
+`--provider` 明确渠道、`--model` 明确其模型，重复 `--option name=value` 表达专属字段，`--background` 指定支持的背景策略。模型/字段白名单来自 `src/image-providers/catalog.ts`，help JSON 的 `imageProviders` 可发现全部能力。
+
+旧 `--aspect-ratio`、`--image-size`、`--no-remove-background` 保留为兼容别名；与专属字段/背景冲突时报用法错误，不覆盖。重复 option key、未知 key、非法布尔/非有限数字都被拒绝。未指定 provider 时按旧环境优先级选择，建任务时固定到 v2；配置错误退出 1，不创建任务。
+
 ## 输出契约
 
 | 流 | 内容 |

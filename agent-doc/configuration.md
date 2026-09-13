@@ -15,22 +15,28 @@
 | `GEMINI_API_KEY` | — | 直连 Google 模式的密钥 |
 | `GEMINI_USER_AGENT` | — | 可选，直连模式下附加的 User-Agent |
 | `GOOGLE_GEMINI_BASE_URL` | — | **死变量**：`.env` 里有，但全仓库无代码读取（可能是 SDK 历史遗留）。改它不会改变任何行为 |
-| `AI_GATEWAY_URL` | — | 设置后进入 Gateway 模式 |
-| `AI_GATEWAY_TOKEN` | — | Gateway 模式密钥 |
+| `AI_GATEWAY_URL` | — | Gateway 根前缀；仅旧快照或未指定渠道时参与自动选择 |
+| `AI_GATEWAY_TOKEN` | — | Gateway 渠道密钥 |
+| `OPENAI_API_KEY` | — | OpenAI Images 密钥 |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | 可选 OpenAI 根前缀 |
+| `OPENROUTER_API_KEY` | — | OpenRouter Images 密钥 |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | 可选 OpenRouter 根前缀 |
 
 另外 CLI 的 `--database` / `--out` 优先于对应环境变量；服务端参数由 `startServer(options)` 显式传入时优先于环境变量（测试就是这么隔离的）。
 
-## provider 模式选择
+## provider 渠道选择
 
-`src/generator.ts` 的 `isGatewayMode()`：**`AI_GATEWAY_URL` 与 `AI_GATEWAY_TOKEN` 同时存在**才走 AI Gateway，否则走直连 Google。两者都缺时会抛 `GEMINI_API_KEY environment variable is not set`。
+四个渠道由 `src/image-providers/catalog.ts` 静态定义，服务端 adapter 在 `src/image-providers/server/` 注册。新任务持久化 v2 selection：providerId、modelId、options、background。没有凭证设置页面。
 
-| | AI Gateway 模式 | 直连模式 |
-| --- | --- | --- |
-| 触发条件 | URL + TOKEN 都有 | 否则 |
-| SDK 入口 | `createGateway({ baseURL, apiKey })` | `createGoogleGenerativeAI({ apiKey })` |
-| 模型 id | `google/<model>`（`gemini-3-pro-image` 特判） | `gemini-3-pro-image` → `gemini-3-pro-image-preview` |
+- Google / AI Gateway 保留原 SDK 和模型映射；Google SDK 原有默认重试（2 次）保留。
+- OpenAI Images：`OPENAI_API_KEY`，可选 `OPENAI_BASE_URL`（默认 `https://api.openai.com/v1`）；无参考图走 generations，有图走 multipart edits。
+- OpenRouter Images：`OPENROUTER_API_KEY`，可选 `OPENROUTER_BASE_URL`（默认 `https://openrouter.ai/api/v1`）；统一 JSON `/images`。固定已核对上游，禁用 fallback。
+- 自定义根前缀只接受 HTTP(S)，拒绝 userinfo/query/fragment，保留自定义路径，不自动补 `/v1`。显式空字符串或空白同样无效；只有未设置时使用默认地址。
+- 只有旧快照与未指定渠道的旧 API/CLI 参数使用环境优先级：Gateway URL+TOKEN 齐备则 Gateway，否则 Google。新 v2 重试不会因其他 key 出现而换渠道；修改其渠道 endpoint 仍会影响之后执行。
+- `/api/image-providers` 只返回本地配置状态、原因码、缺失变量名和 legacy 默认渠道，不返回值、不探测账户。
+- 新任务在建库前检查配置。HTTP 配置错误为 503，CLI 为退出 1；参数错误分别为 400/退出 2。
 
-后台调研原文（为什么不用 ai-gateway 的 Gemini 路由、Vertex 返回 400 的原因）见 [design/ai-gateway-integration.md](design/ai-gateway-integration.md)。**注意该原文的「代码结构」一节已过时**：现在只有一个 `generateSingleImage()` 实现，不是两个 `generateWith*()` 分支。
+首批 GPT 2.5 Flare/Sunburst 使用原生透明，无洋红降级。OpenAI 只开放有限尺寸预设；OpenRouter 不开放精确尺寸、不发送未确认的 output_format。原生透明响应无 alpha 则失败。新 fetch adapter 不重试，180 秒超时不等于远端未计费。
 
 ## Secret 处理规则
 
@@ -42,7 +48,7 @@
 
 | 症状 | 原因 | 修正 |
 | --- | --- | --- |
-| `GEMINI_API_KEY environment variable is not set` | 两个模式都没配齐 | 补 `GEMINI_API_KEY`，或同时补 URL+TOKEN |
+| `image provider is not configured` | 所选渠道缺少环境变量或根前缀无效 | 按错误列出的变量名配置；不要把可选根前缀设为空白 |
 | 图生成到别处 / CLI 与 Web 找不到同一批产出 | `OUTPUT_DIR` 与 `DATABASE_PATH` 两端不一致 | 让 Web 与 CLI 用同一组环境变量 |
 | 端口被占 | 3000 上已有实例 | 换 `PORT`，或先停旧进程 |
 | 改了参数但行为没变 | `auto` 表示「不发送该字段」 | 显式选一个具体值；`auto` 不是「交给前端猜」 |

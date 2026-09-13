@@ -21,16 +21,11 @@ import {
 } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import {
-  AUTO,
-  getModelCapabilities,
-  resolveAspectRatio,
-  resolveImageSize,
-  SUPPORTED_MODELS,
-} from '../../src/image-options';
+import { selectionsEqual } from '../../src/image-providers';
 import type { AssetRow, FileRow, UploadSummary } from '../../src/web-types';
 import {
   api,
+  applyCount,
   draftFromJob,
   HISTORY_PAGE_SIZE,
   isActive,
@@ -44,11 +39,11 @@ import {
   useDraft,
 } from './api';
 import { MaterialsSidebar, PromptComposer } from './components/Composer';
+import { ProviderOptionsFields } from './components/ProviderOptionsFields';
 import { Alert, AlertDescription, AlertTitle } from './components/ui/alert';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './components/ui/card';
-import { Checkbox } from './components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -59,7 +54,6 @@ import {
 } from './components/ui/dialog';
 import { Input } from './components/ui/input';
 import { Progress } from './components/ui/progress';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
 import { Separator } from './components/ui/separator';
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from './components/ui/sheet';
 import { Skeleton } from './components/ui/skeleton';
@@ -99,7 +93,8 @@ function Workspace() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState('');
-  const modelCapabilities = getModelCapabilities(draft.options.model);
+  const providerStatus = useQuery({ queryKey: ['image-providers'], queryFn: api.providers });
+  const configured = providerStatus.data?.providers.find((p) => p.id === draft.options.selection.providerId);
   const insertAsset = (asset: AssetRow, closeDrawer = false) => {
     const element = textareaRef.current;
     const start = element?.selectionStart ?? draft.prompt.length;
@@ -193,11 +188,17 @@ function Workspace() {
    * An untouched composer applies immediately, which is the point of one-click reuse.
    */
   const reuseJob = (job: JobSummary) => {
-    const reused = draftFromJob(job, assets.data ?? [], uploads.data ?? []);
+    let reused: ReusedDraft;
+    try {
+      reused = draftFromJob(job, assets.data ?? [], uploads.data ?? [], providerStatus.data?.legacyProviderId);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '此任务配置无法复用');
+      return;
+    }
     const inUse = draft.prompt.trim().length > 0;
-    const optionsDiffer = Object.entries(reused.options).some(
-      ([key, value]) => draft.options[key as keyof Options] !== value,
-    );
+    const optionsDiffer =
+      draft.options.count !== reused.options.count ||
+      !selectionsEqual(draft.options.selection, reused.options.selection);
     if (inUse && (draft.prompt !== reused.prompt || optionsDiffer)) {
       setPendingReuse(reused);
       return;
@@ -336,65 +337,22 @@ function Workspace() {
 
           <Card>
             <CardContent className="flex flex-wrap items-center gap-3 p-4">
-              <Select
-                disabled={loading}
-                value={draft.options.model}
-                onValueChange={(model) =>
-                  draft.set({
-                    options: {
-                      ...draft.options,
-                      model,
-                      aspectRatio: resolveAspectRatio(model, draft.options.aspectRatio),
-                      imageSize: resolveImageSize(model, draft.options.imageSize),
-                    },
-                  })
-                }
-              >
-                <SelectTrigger className="w-full sm:w-60" aria-label="生成模型">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SUPPORTED_MODELS.map((model) => (
-                    <SelectItem key={model} value={model}>
-                      {model}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                disabled={loading}
-                value={draft.options.aspectRatio}
-                onValueChange={(aspectRatio) => draft.set({ options: { ...draft.options, aspectRatio } })}
-              >
-                <SelectTrigger className="w-full sm:w-40" aria-label="图片比例">
-                  <SelectValue placeholder="图片比例" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={AUTO}>auto（不指定）</SelectItem>
-                  {modelCapabilities.aspectRatios.map((aspectRatio) => (
-                    <SelectItem key={aspectRatio} value={aspectRatio}>
-                      {aspectRatio}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                disabled={loading}
-                value={draft.options.imageSize}
-                onValueChange={(imageSize) => draft.set({ options: { ...draft.options, imageSize } })}
-              >
-                <SelectTrigger className="w-full sm:w-40" aria-label="图片分辨率">
-                  <SelectValue placeholder="图片分辨率" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={AUTO}>auto（不指定）</SelectItem>
-                  {modelCapabilities.imageSizes.map((imageSize) => (
-                    <SelectItem key={imageSize} value={imageSize}>
-                      {imageSize}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ProviderOptionsFields
+                options={draft.options}
+                onChange={(options) => {
+                  setParams(false);
+                  draft.set({ options });
+                }}
+                onNotice={setNotice}
+              />
+              {!configured?.configured && (
+                <p className="text-sm text-muted-foreground">
+                  渠道尚未配置：{configured?.missingEnv.join('、') ?? '正在读取本地配置状态'}
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                配置状态仅表示本地变量齐备；旧任务复用按当前配置解析渠道，并非历史调用渠道。
+              </p>
               <input
                 ref={uploadInputRef}
                 type="file"
@@ -427,7 +385,7 @@ function Workspace() {
               <Button
                 type="button"
                 className="w-full sm:ml-auto sm:w-auto"
-                disabled={submit.isPending || !draft.prompt.trim()}
+                disabled={submit.isPending || !draft.prompt.trim() || !configured?.configured}
                 onClick={requestSubmit}
               >
                 {submit.isPending ? '提交中…' : `提交任务 · ${draft.options.count} 张`}
@@ -466,8 +424,8 @@ function Workspace() {
         open={params}
         options={draft.options}
         onClose={() => setParams(false)}
-        onSave={(options) => {
-          draft.set({ options });
+        onSave={(count) => {
+          draft.set({ options: applyCount(useDraft.getState().options, count) });
           setParams(false);
         }}
       />
@@ -633,13 +591,11 @@ function ParametersDialog({
   open: boolean;
   options: Options;
   onClose: () => void;
-  onSave: (options: Options) => void;
+  onSave: (count: number) => void;
 }) {
   const [count, setCount] = useState(options.count);
-  const [removeBackground, setRemoveBackground] = useState(options.removeBackground);
   React.useEffect(() => {
     setCount(options.count);
-    setRemoveBackground(options.removeBackground);
   }, [options]);
 
   return (
@@ -661,22 +617,16 @@ function ParametersDialog({
               onChange={(event) => setCount(Math.max(1, Math.min(20, Number(event.target.value))))}
             />
           </label>
-          <div className="flex items-center gap-3">
-            <Checkbox
-              id="remove-background"
-              checked={removeBackground}
-              onCheckedChange={(checked) => setRemoveBackground(checked === true)}
-            />
-            <label className="text-sm font-medium" htmlFor="remove-background">
-              移除背景
-            </label>
-          </div>
         </div>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose}>
             取消
           </Button>
-          <Button type="button" onClick={() => onSave({ ...options, count, removeBackground })}>
+          <Button
+            type="button"
+            disabled={!Number.isInteger(count) || count < 1 || count > 20}
+            onClick={() => onSave(count)}
+          >
             应用参数
           </Button>
         </DialogFooter>

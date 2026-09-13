@@ -17,7 +17,7 @@ const request = (method: string, path: string, value?: unknown) =>
 describe('web API', () => {
   test('asset CRUD and validation use stable envelopes', async () => {
     const db = await openDatabase(':memory:');
-    const api = createApiHandler({ repositories: createRepositories(db.db) });
+    const api = createApiHandler({ env: { GEMINI_API_KEY: 'test-only' }, repositories: createRepositories(db.db) });
     expect((await api(request('GET', '/api/health'))).status).toBe(200);
     expect((await api(request('POST', '/api/assets', { name: 'A', prompt: 'hello' }))).status).toBe(201);
     expect((await api(request('POST', '/api/assets', { name: 'B', prompt: 'hello' }))).status).toBe(201);
@@ -29,20 +29,20 @@ describe('web API', () => {
   test('job persists across handler recreation and rejects reference images', async () => {
     const db = await openDatabase(':memory:');
     const repo = createRepositories(db.db);
-    const api = createApiHandler({ repositories: repo });
+    const api = createApiHandler({ env: { GEMINI_API_KEY: 'test-only' }, repositories: repo });
     const rejected = await api(request('POST', '/api/jobs', { prompt: 'x', referenceImages: [] }));
     expect(rejected.status).toBe(400);
     const accepted = await api(request('POST', '/api/jobs', { prompt: 'x', count: 1 }));
     expect(accepted.status).toBe(202);
     const job = (await accepted.json()) as { id: string };
-    const api2 = createApiHandler({ repositories: repo });
+    const api2 = createApiHandler({ env: { GEMINI_API_KEY: 'test-only' }, repositories: repo });
     expect((await api2(request('GET', `/api/jobs/${job.id}`))).status).toBe(200);
     db.close();
   });
   test('stores automatic image options as unspecified and preserves explicit values', async () => {
     const db = await openDatabase(':memory:');
     const repo = createRepositories(db.db);
-    const api = createApiHandler({ repositories: repo });
+    const api = createApiHandler({ env: { GEMINI_API_KEY: 'test-only' }, repositories: repo });
 
     const automatic = await api(
       request('POST', '/api/jobs', {
@@ -54,8 +54,11 @@ describe('web API', () => {
     );
     expect(automatic.status).toBe(202);
     expect((await automatic.json()).options).toEqual({
-      model: 'gemini-3-pro-image',
-      removeBackground: true,
+      version: 2,
+      providerId: 'google',
+      modelId: 'gemini-3-pro-image',
+      options: {},
+      background: 'magenta-key',
     });
 
     const explicit = await api(
@@ -68,10 +71,11 @@ describe('web API', () => {
     );
     expect(explicit.status).toBe(202);
     expect((await explicit.json()).options).toEqual({
-      model: 'gemini-3-pro-image',
-      aspectRatio: '16:9',
-      imageSize: '2K',
-      removeBackground: true,
+      version: 2,
+      providerId: 'google',
+      modelId: 'gemini-3-pro-image',
+      options: { aspectRatio: '16:9', imageSize: '2K' },
+      background: 'magenta-key',
     });
 
     expect(
@@ -102,7 +106,7 @@ describe('web API', () => {
   test('creates jobs with multiple references and immutable expansion', async () => {
     const db = await openDatabase(':memory:');
     const repo = createRepositories(db.db);
-    const api = createApiHandler({ repositories: repo });
+    const api = createApiHandler({ env: { GEMINI_API_KEY: 'test-only' }, repositories: repo });
     const a = (await (
       await api(request('POST', '/api/assets', { name: 'A', prompt: 'alpha', category: '人物', metadata: { x: 1 } }))
     ).json()) as { id: string };
@@ -140,7 +144,7 @@ describe('web API', () => {
   test('uploads store images, serve bytes, and archive keeps them hidden', async () => {
     const db = await openDatabase(':memory:');
     const repo = createRepositories(db.db);
-    const api = createApiHandler({ repositories: repo });
+    const api = createApiHandler({ env: { GEMINI_API_KEY: 'test-only' }, repositories: repo });
     const created = await api(uploadRequest(pngFile()));
     expect(created.status).toBe(201);
     const upload = (await created.json()) as { id: string; name: string; mimeType: string };
@@ -162,7 +166,7 @@ describe('web API', () => {
 
   test('uploads reject non-images, wrong content type, and bogus paths', async () => {
     const db = await openDatabase(':memory:');
-    const api = createApiHandler({ repositories: createRepositories(db.db) });
+    const api = createApiHandler({ env: { GEMINI_API_KEY: 'test-only' }, repositories: createRepositories(db.db) });
     expect((await api(request('POST', '/api/uploads', {}))).status).toBe(400);
     const textFile = new File([new TextEncoder().encode('hello there')], 'a.txt', { type: 'text/plain' });
     expect((await api(uploadRequest(textFile))).status).toBe(400);
@@ -178,7 +182,7 @@ describe('web API', () => {
   test('jobs snapshot image references and expand tokens into plain names', async () => {
     const db = await openDatabase(':memory:');
     const repo = createRepositories(db.db);
-    const api = createApiHandler({ repositories: repo });
+    const api = createApiHandler({ env: { GEMINI_API_KEY: 'test-only' }, repositories: repo });
     const upload = (await (await api(uploadRequest(pngFile('表情包.png')))).json()) as { id: string };
     const created = await api(
       request('POST', '/api/jobs', {
@@ -204,7 +208,7 @@ describe('web API', () => {
   test('lists history as one page plus the total the pager needs', async () => {
     const db = await openDatabase(':memory:');
     const repo = createRepositories(db.db);
-    const api = createApiHandler({ repositories: repo });
+    const api = createApiHandler({ env: { GEMINI_API_KEY: 'test-only' }, repositories: repo });
     const created: string[] = [];
     for (let n = 1; n <= 12; n++) {
       const response = await api(request('POST', '/api/jobs', { prompt: `job ${n}` }));
@@ -248,7 +252,11 @@ describe('web API', () => {
   test('registered output blocks traversal and missing files', async () => {
     const db = await openDatabase(':memory:');
     const repo = createRepositories(db.db);
-    const api = createApiHandler({ repositories: repo, outputDir: '/tmp/sticker-output' });
+    const api = createApiHandler({
+      env: { GEMINI_API_KEY: 'test-only' },
+      repositories: repo,
+      outputDir: '/tmp/sticker-output',
+    });
     expect((await api(request('GET', '/api/output/..%2Fsecret.png'))).status).toBe(404);
     expect((await api(request('GET', '/api/output/nope.png'))).status).toBe(404);
     db.close();
@@ -258,7 +266,7 @@ describe('web API', () => {
     const db = await openDatabase(':memory:');
     const repo = createRepositories(db.db);
     const outputDir = join(tmpdir(), `sticker-output-${crypto.randomUUID()}`);
-    const api = createApiHandler({ repositories: repo, outputDir });
+    const api = createApiHandler({ env: { GEMINI_API_KEY: 'test-only' }, repositories: repo, outputDir });
     repo.createJob({ assetName: 'x', prompt: 'p', options: {}, count: 1 });
     const item = repo.claimNextItem();
     if (!item) {
@@ -297,6 +305,7 @@ describe('web API', () => {
   test('startServer serves and processes accepted jobs through its background worker', async () => {
     const outputDir = `/tmp/sticker-server-${crypto.randomUUID()}`;
     const app = await startServer({
+      env: { GEMINI_API_KEY: 'test-only' },
       databasePath: ':memory:',
       outputDir,
       port: 0,
@@ -330,7 +339,7 @@ describe('web API', () => {
   test('mutation routes reject extra path segments', async () => {
     const db = await openDatabase(':memory:');
     const repo = createRepositories(db.db);
-    const api = createApiHandler({ repositories: repo });
+    const api = createApiHandler({ env: { GEMINI_API_KEY: 'test-only' }, repositories: repo });
     const asset = (await (await api(request('POST', '/api/assets', { name: 'A', prompt: 'hello' }))).json()) as {
       id: string;
     };

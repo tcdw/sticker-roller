@@ -3,14 +3,20 @@ import { openDatabase } from '../db/client';
 import { createRepositories } from '../db/repositories';
 import { createWorker } from './worker';
 
+/** 无版本旧快照的真实形状：迁移前的 validateOptions 永远写入 model + removeBackground。 */
+const LEGACY = { model: 'gemini-3-pro-image', removeBackground: true };
+/** 旧快照按哪个渠道解释由注入的假 env 决定，测试不依赖开发机上的真实凭证。 */
+const ENV = {} as Record<string, string | undefined>;
+
 describe('durable generation worker', () => {
   test('persists each item and does not rerun successful items on retry', async () => {
     const db = await openDatabase(':memory:');
     const repo = createRepositories(db.db);
     let calls = 0;
-    const job = repo.createJob({ assetName: 'demo', prompt: 'p', options: {}, count: 2 });
+    const job = repo.createJob({ assetName: 'demo', prompt: 'p', options: { ...LEGACY }, count: 2 });
     const worker = createWorker({
       repositories: repo,
+      env: ENV,
       outputDir: `/tmp/sticker-worker-${crypto.randomUUID()}`,
       generator: async () => {
         calls++;
@@ -35,28 +41,42 @@ describe('durable generation worker', () => {
     repo.createJob({
       assetName: 'automatic',
       prompt: 'p',
-      options: { model: 'gemini-3-pro-image' },
+      options: { model: 'gemini-3-pro-image', removeBackground: true },
       count: 1,
     });
     repo.createJob({
       assetName: 'explicit',
       prompt: 'p',
-      options: { model: 'gemini-3-pro-image', aspectRatio: '16:9', imageSize: '2K' },
+      options: { model: 'gemini-3-pro-image', aspectRatio: '16:9', imageSize: '2K', removeBackground: false },
       count: 1,
     });
-    const calls: Array<{ aspectRatio?: string; imageSize?: string }> = [];
+    const calls: unknown[] = [];
     await createWorker({
       repositories: repo,
+      env: ENV,
       outputDir: `/tmp/sticker-worker-${crypto.randomUUID()}`,
       generator: async (input) => {
-        calls.push({ aspectRatio: input.aspectRatio, imageSize: input.imageSize });
+        calls.push(input.selection);
         return { success: true, imageBuffer: Buffer.from('x'), mimeType: 'image/png' };
       },
     }).drain();
 
+    // 完整 selection 原样传递：新增选项不需要再改 worker 的透传清单。
     expect(calls).toEqual([
-      { aspectRatio: undefined, imageSize: undefined },
-      { aspectRatio: '16:9', imageSize: '2K' },
+      {
+        version: 2,
+        providerId: 'google',
+        modelId: 'gemini-3-pro-image',
+        options: {},
+        background: 'magenta-key',
+      },
+      {
+        version: 2,
+        providerId: 'google',
+        modelId: 'gemini-3-pro-image',
+        options: { aspectRatio: '16:9', imageSize: '2K' },
+        background: 'original',
+      },
     ]);
     db.close();
   });
@@ -75,12 +95,13 @@ describe('durable generation worker', () => {
       assetName: 'demo',
       prompt: 'p',
       referencedImages: [{ kind: 'image', id: upload.id, name: upload.name, mimeType: upload.mimeType }],
-      options: {},
+      options: { ...LEGACY },
       count: 1,
     });
     const calls: Array<Array<{ data: string; mimeType: string; fileName: string }>> = [];
     await createWorker({
       repositories: repo,
+      env: ENV,
       outputDir: `/tmp/sticker-worker-${crypto.randomUUID()}`,
       generator: async (input) => {
         calls.push(input.sticker.referenceImages);
@@ -100,12 +121,13 @@ describe('durable generation worker', () => {
       assetName: 'demo',
       prompt: 'p',
       referencedImages: [{ kind: 'image', id: crypto.randomUUID(), name: 'gone.png', mimeType: 'image/png' }],
-      options: {},
+      options: { ...LEGACY },
       count: 1,
     });
     let calls = 0;
     const worker = createWorker({
       repositories: repo,
+      env: ENV,
       outputDir: `/tmp/sticker-worker-${crypto.randomUUID()}`,
       generator: async () => {
         calls++;
@@ -124,11 +146,12 @@ describe('durable generation worker', () => {
   test('queued cancellation is honored', async () => {
     const db = await openDatabase(':memory:');
     const repo = createRepositories(db.db);
-    const job = repo.createJob({ assetName: 'x', prompt: 'p', options: {}, count: 2 });
+    const job = repo.createJob({ assetName: 'x', prompt: 'p', options: { ...LEGACY }, count: 2 });
     repo.cancelJob(job.id);
     let calls = 0;
     await createWorker({
       repositories: repo,
+      env: ENV,
       generator: async () => {
         calls++;
         return { success: true, imageBuffer: Buffer.from('x'), mimeType: 'image/png' };
@@ -142,9 +165,10 @@ describe('durable generation worker', () => {
   test('redacts complete sensitive provider credentials', async () => {
     const db = await openDatabase(':memory:');
     const repo = createRepositories(db.db);
-    const job = repo.createJob({ assetName: 'x', prompt: 'p', options: {}, count: 1 });
+    const job = repo.createJob({ assetName: 'x', prompt: 'p', options: { ...LEGACY }, count: 1 });
     const worker = createWorker({
       repositories: repo,
+      env: ENV,
       outputDir: `/tmp/sticker-worker-${crypto.randomUUID()}`,
       generator: async () => {
         throw new Error('Authorization: Bearer TOPSECRET, Basic BASICSECRET x-api-key=KEYSECRET');
@@ -164,7 +188,7 @@ describe('durable generation worker', () => {
   test('cancellation after claim but before request creation skips provider', async () => {
     const db = await openDatabase(':memory:');
     const base = createRepositories(db.db);
-    const job = base.createJob({ assetName: 'x', prompt: 'p', options: {}, count: 1 });
+    const job = base.createJob({ assetName: 'x', prompt: 'p', options: { ...LEGACY }, count: 1 });
     let cancelled = false;
     const repo = {
       ...base,
@@ -180,6 +204,7 @@ describe('durable generation worker', () => {
     let calls = 0;
     await createWorker({
       repositories: repo,
+      env: ENV,
       generator: async () => {
         calls++;
         return { success: true, imageBuffer: Buffer.from('x'), mimeType: 'image/png' };
@@ -196,7 +221,7 @@ describe('durable generation worker', () => {
   test('stale recovery is idempotent for registered output', async () => {
     const db = await openDatabase(':memory:');
     const repo = createRepositories(db.db);
-    const job = repo.createJob({ assetName: 'x', prompt: 'p', options: {}, count: 1 });
+    const job = repo.createJob({ assetName: 'x', prompt: 'p', options: { ...LEGACY }, count: 1 });
     const item = repo.claimNextItem()!;
     repo.registerFile({ itemId: item.id, fileName: `${job.id}-1.png`, mimeType: 'image/png', sizeBytes: 1 });
     repo.recoverStale(new Date(Date.now() + 1000).toISOString());
@@ -211,10 +236,11 @@ describe('job-scoped draining', () => {
   test('drain(jobId) never claims items that belong to another job', async () => {
     const db = await openDatabase(':memory:');
     const repo = createRepositories(db.db);
-    const mine = repo.createJob({ assetName: 'mine', prompt: 'p', options: {}, count: 2 });
-    const theirs = repo.createJob({ assetName: 'theirs', prompt: 'p', options: {}, count: 1 });
+    const mine = repo.createJob({ assetName: 'mine', prompt: 'p', options: { ...LEGACY }, count: 2 });
+    const theirs = repo.createJob({ assetName: 'theirs', prompt: 'p', options: { ...LEGACY }, count: 1 });
     const worker = createWorker({
       repositories: repo,
+      env: ENV,
       outputDir: `/tmp/sticker-worker-${crypto.randomUUID()}`,
       generator: async () => ({ success: true, imageBuffer: Buffer.from('png'), mimeType: 'image/png' }),
     });
@@ -227,10 +253,11 @@ describe('job-scoped draining', () => {
   test('claimNextItem() without a job id still drains every queued item', async () => {
     const db = await openDatabase(':memory:');
     const repo = createRepositories(db.db);
-    const first = repo.createJob({ assetName: 'first', prompt: 'p', options: {}, count: 1 });
-    const second = repo.createJob({ assetName: 'second', prompt: 'p', options: {}, count: 1 });
+    const first = repo.createJob({ assetName: 'first', prompt: 'p', options: { ...LEGACY }, count: 1 });
+    const second = repo.createJob({ assetName: 'second', prompt: 'p', options: { ...LEGACY }, count: 1 });
     const worker = createWorker({
       repositories: repo,
+      env: ENV,
       outputDir: `/tmp/sticker-worker-${crypto.randomUUID()}`,
       generator: async () => ({ success: true, imageBuffer: Buffer.from('png'), mimeType: 'image/png' }),
     });

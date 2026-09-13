@@ -25,7 +25,7 @@ sticker-roller 是**单进程**应用：一个 Bun 进程里同时跑 HTTP API�
 | 关注点 | Web | CLI |
 | --- | --- | --- |
 | 入口文件 | `server/index.ts` → `server/api.ts` | `cli.ts` → `src/cli-run.ts` |
-| 校验 | `validateOptions()`（`src/jobs/options.ts`） | 同一个函数 |
+| 校验 | `normalizeJobSelection()`（`src/jobs/options.ts`） | 同一个函数 |
 | 引用解析 | `resolveJobInput()`（`src/jobs/references.ts`），只接受 id | 同一函数，额外允许名字与本地路径 |
 | 执行 | 进程内常驻 worker 循环 | 按 jobId 临时 `drain`，不碰别人的任务 |
 | 输出 | HTTP JSON | stdout 路径 / 表格 / JSON |
@@ -55,8 +55,8 @@ claimNextItem（事务内条件更新，防重复领取）
 GenerationWorker.process  src/jobs/worker.ts
   startRequest（写 llm_requests，attempt 递增）
   → generateSingleImage  src/generator.ts
-      └─ 有 AI_GATEWAY_URL+TOKEN → createGateway，否则 createGoogleGenerativeAI
-      └─ removeBackground=true 时走 sharp 洋红抠底
+      └─ 解码 legacy/v2 selection → registry 选定渠道 adapter
+      └─ background 决定原生透明、洋红抠底或保留原图
   → Bun.write 临时文件 → rename 到 output/<jobId>-<ordinal>.<ext>
   → finalizeRequest（登记 generated_files + 更新 item + 刷新 job + 写事件）
         │
@@ -81,9 +81,10 @@ GenerationWorker.process  src/jobs/worker.ts
 | `src/db/repositories.ts` | 全部状态迁移（claim / finalize / cancel / retry / recover），事务都在这里 |
 | `src/jobs/worker.ts` | 队列循环、心跳、重试上限、临时文件、错误脱敏、注册产出复用 |
 | `src/jobs/references.ts` | 引用解析（id / 名字 / 唯一片段）与 prompt 展开，Web 与 CLI 共用 |
-| `src/jobs/options.ts` | 生成参数校验（model / aspectRatio / imageSize / removeBackground）与上限常量 |
-| `src/generator.ts` | 单次 provider 调用，返回 buffer；不决定落盘路径 |
-| `src/image-options.ts` | 模型能力矩阵，**纯 TS**，前端直接打包 |
+| `src/jobs/options.ts` | HTTP/CLI 共同归一化、配置检查、引用展开后的输入限制 |
+| `src/generator.ts` | 背景编排和图片验证，返回 buffer；不决定落盘路径 |
+| `src/image-providers/` | 纯 TS 渠道/模型定义、版本化快照与默认值；`server/` 单独负责适配、凭证和网络 |
+| `src/image-options.ts` | 旧 Gemini flags 的兼容枚举，非新渠道能力中心 |
 | `src/prompt-tokens.ts` | 引用 token 正则与提取，**纯 TS**，前后端共享 |
 | `src/uploads.ts` | 上传字节校验（magic number、大小上限）与本地文件入库 |
 | `web/src/main.tsx` | 工作台页面装配、路由、查询与弹窗编排 |

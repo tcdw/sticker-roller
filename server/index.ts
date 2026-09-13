@@ -5,6 +5,7 @@ import { createWorker, startGenerationWorker, stopGenerationWorker } from '../sr
 import { createApiHandler } from './api';
 
 type ServerOptions = {
+  env?: Parameters<typeof createWorker>[0]['env'];
   databasePath?: string;
   outputDir?: string;
   generator?: Parameters<typeof createWorker>[0]['generator'];
@@ -16,8 +17,8 @@ export async function createServer(options: ServerOptions = {}) {
   const database = await openDatabase(options.databasePath);
   const repositories = createRepositories(database.db);
   const outputDir = options.outputDir ?? process.env.OUTPUT_DIR;
-  const worker = createWorker({ repositories, outputDir, generator: options.generator });
-  const api = createApiHandler({ repositories, outputDir });
+  const worker = createWorker({ repositories, outputDir, generator: options.generator, env: options.env });
+  const api = createApiHandler({ repositories, outputDir, env: options.env });
   return { database, repositories, worker, api };
 }
 

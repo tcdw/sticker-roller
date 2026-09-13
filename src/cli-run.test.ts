@@ -29,7 +29,7 @@ async function setup() {
   return { database, repo, asset, archived, upload, dir, saved };
 }
 
-type GeneratorCall = { prompt: string; references: number; removeBackground?: boolean };
+type GeneratorCall = { prompt: string; references: number; background?: string };
 
 /** Records what the worker asked for and returns a deterministic image. */
 function fakeGenerator(calls: GeneratorCall[]): SingleImageGenerator {
@@ -37,7 +37,7 @@ function fakeGenerator(calls: GeneratorCall[]): SingleImageGenerator {
     calls.push({
       prompt: input.sticker.prompt,
       references: input.sticker.referenceImages.length,
-      removeBackground: input.removeBackground,
+      background: input.selection.background,
     });
     return { success: true, imageBuffer: PNG_BYTES, mimeType: 'image/png' };
   };
@@ -50,7 +50,7 @@ describe('cli generate', () => {
     const outcome = await runGeneration(
       repo,
       { prompt: '画一只猫', count: 2, out: join(dir, 'nested') },
-      { generator: fakeGenerator(calls) },
+      { env: { GEMINI_API_KEY: 'test-only' }, generator: fakeGenerator(calls) },
     );
     expect(outcome.succeeded).toBe(2);
     expect(outcome.failed).toBe(0);
@@ -70,7 +70,7 @@ describe('cli generate', () => {
     const outcome = await runGeneration(
       repo,
       { prompt: '@[随便](asset:角色设定) 画成贴纸', assets: ['角色设定'], out: dir },
-      { generator: fakeGenerator(calls) },
+      { env: { GEMINI_API_KEY: 'test-only' }, generator: fakeGenerator(calls) },
     );
     const job = repo.getJob(outcome.jobId).job!;
     expect(JSON.parse(job.referencesSnapshot)).toHaveLength(1);
@@ -85,7 +85,7 @@ describe('cli generate', () => {
     const outcome = await runGeneration(
       repo,
       { prompt: '照着画', images: [saved], out: dir },
-      { generator: fakeGenerator(calls) },
+      { env: { GEMINI_API_KEY: 'test-only' }, generator: fakeGenerator(calls) },
     );
     const job = repo.getJob(outcome.jobId).job!;
     const references = JSON.parse(job.referencesSnapshot) as Array<{ id: string }>;
@@ -103,7 +103,7 @@ describe('cli generate', () => {
     const outcome = await runGeneration(
       repo,
       { prompt: `按 ![老名字](image:${upload.id}) 画`, out: dir },
-      { generator: fakeGenerator(calls) },
+      { env: { GEMINI_API_KEY: 'test-only' }, generator: fakeGenerator(calls) },
     );
     const job = repo.getJob(outcome.jobId).job!;
     expect(job.authoredPromptSnapshot).toBe(`按 ![参考.png](image:${upload.id}) 画`);
@@ -120,7 +120,11 @@ describe('cli generate', () => {
       [{ prompt: '画', images: ['./不存在.png'] }, /no such image file/],
     ];
     for (const [extra, pattern] of cases) {
-      const error = await runGeneration(repo, { out: dir, ...extra }, { generator: fakeGenerator([]) }).then(
+      const error = await runGeneration(
+        repo,
+        { out: dir, ...extra },
+        { env: { GEMINI_API_KEY: 'test-only' }, generator: fakeGenerator([]) },
+      ).then(
         () => undefined,
         (caught: unknown) => caught as Error,
       );
@@ -136,7 +140,7 @@ describe('cli generate', () => {
     const error = await runGeneration(
       repo,
       { prompt: '画', assets: ['角色'], out: dir },
-      { generator: fakeGenerator([]) },
+      { env: { GEMINI_API_KEY: 'test-only' }, generator: fakeGenerator([]) },
     ).then(
       () => undefined,
       (caught: unknown) => caught as ReferenceLookupError,
@@ -153,6 +157,7 @@ describe('cli generate', () => {
       repo,
       { prompt: '画', count: 2, out: dir },
       {
+        env: { GEMINI_API_KEY: 'test-only' },
         generator: async () => {
           call++;
           return call === 1
@@ -178,14 +183,16 @@ describe('cli generate', () => {
     const outcome = await runGeneration(
       repo,
       { prompt: '画', aspectRatio: 'auto', imageSize: '2K', removeBackground: false, out: dir },
-      { generator: fakeGenerator(calls) },
+      { env: { GEMINI_API_KEY: 'test-only' }, generator: fakeGenerator(calls) },
     );
     expect(JSON.parse(repo.getJob(outcome.jobId).job!.optionsSnapshot)).toEqual({
-      model: 'gemini-3-pro-image',
-      imageSize: '2K',
-      removeBackground: false,
+      version: 2,
+      providerId: 'google',
+      modelId: 'gemini-3-pro-image',
+      options: { imageSize: '2K' },
+      background: 'original',
     });
-    expect(calls[0]!.removeBackground).toBe(false);
+    expect(calls[0]!.background).toBe('original');
     database.close();
     await rm(dir, { recursive: true, force: true });
   });
@@ -195,7 +202,11 @@ describe('cli generate', () => {
     await runGeneration(
       repo,
       { prompt: '画', count: 3, out: dir },
-      { generator: fakeGenerator([]), onProgress: (done, total) => progress.push(`${done}/${total}`) },
+      {
+        env: { GEMINI_API_KEY: 'test-only' },
+        generator: fakeGenerator([]),
+        onProgress: (done, total) => progress.push(`${done}/${total}`),
+      },
     );
     expect(progress).toEqual(['1/3', '2/3', '3/3']);
     database.close();

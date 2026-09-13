@@ -54,6 +54,12 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3199/   # 200（需先
 
 遇到与本次改动无关的失败，在最终回复里说明是既有问题，但不要因此跳过验证。
 
+## 渠道迁移验证
+
+测试使用 `bun --no-env-file test`，并显式注入假 env、generator 或 fetch；不以存在假 generator 为由跳过配置校验。`src/image-providers/*.test.ts` 验证双格式解码，`src/image-providers/server/*.test.ts` 验证离线协议，`src/jobs/options.test.ts` 比较 HTTP/CLI 快照和输入限制。
+
+全仓 biome 也可能扫描 `.temp/` 的调查源码与 JSON，须与已跟踪源码结果区分，不能把噪音算成新业务诊断。2026-09-12 开工基线为 93 tests，tracked check 2 errors / 63 warnings；实际最终数量以当次命令为准。真实账户、透明边缘和图片质量未获授权，不属于离线测试通过的含义。
+
 ## 结果记录
 
 最终回复应区分三类结果：

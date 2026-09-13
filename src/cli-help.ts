@@ -18,6 +18,8 @@ import {
   SPEC_VERSION,
 } from './cli-spec';
 
+import { IMAGE_PROVIDERS } from './image-providers/catalog';
+
 const SECTION_INDENT = '  ';
 const MAX_COLUMN = 38;
 
@@ -124,6 +126,15 @@ export function renderTopLevelHelp(): string {
     ...renderSection('OPTIONS', renderOptionsBlock([{ name: '--help', short: '-h', description: 'Show help.' }])),
     ...renderSection('EXIT CODES', renderExitCodes()),
     ...renderSection('OUTPUT', renderOutputContract()),
+    ...renderSection(
+      'IMAGE PROVIDERS',
+      IMAGE_PROVIDERS.flatMap((provider) =>
+        provider.models.map(
+          (model) =>
+            `  ${provider.id} / ${model.id}: ${model.fields.map((field) => `${field.name}${field.kind === 'select' ? `=[auto,${field.choices.map((c) => c.value).join(',')}]` : ` (${field.kind})`}`).join('; ')}`,
+        ),
+      ),
+    ),
     ...renderSection('ENV', renderEnv()),
     '',
     `Run '${PROGRAM} <command> --help' for command options.`,
@@ -145,6 +156,7 @@ export function renderHelpJson(): string {
 
 export function helpSpec() {
   return {
+    imageProviders: IMAGE_PROVIDERS,
     specVersion: SPEC_VERSION,
     program: PROGRAM_NAME,
     invocation: PROGRAM,

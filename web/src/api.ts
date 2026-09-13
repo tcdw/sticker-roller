@@ -1,5 +1,10 @@
 import { create } from 'zustand';
-import { AUTO, DEFAULT_MODEL, resolveAspectRatio, resolveImageSize, SUPPORTED_MODELS } from '../../src/image-options';
+import {
+  decodeSelectionSnapshot,
+  type GenerationSelection,
+  type LegacyProviderId,
+  normalizeSelectionInput,
+} from '../../src/image-providers';
 import { referencedIdsFromPrompt } from '../../src/prompt-tokens';
 import type { AssetRow, FileRow, ItemRow, JobRow, UploadSummary } from '../../src/web-types';
 export type JobReference = { kind?: string; id: string; name?: string };
@@ -12,38 +17,34 @@ export type Job = JobSummary & {
   items: (ItemRow & { files?: FileRow[] })[];
   events: unknown[];
 };
-export type Options = {
-  model: string;
-  aspectRatio: string;
-  imageSize: string;
-  removeBackground: boolean;
-  count: number;
-};
-const defaults: Options = {
-  model: DEFAULT_MODEL,
-  aspectRatio: AUTO,
-  imageSize: AUTO,
-  removeBackground: true,
-  count: 1,
-};
-const MAX_COUNT = 20;
-export const DEFAULT_OPTIONS: Readonly<Options> = { ...defaults };
-/** Rebuild the current option shape from a persisted job snapshot, dropping values the app no longer supports. */
-export function optionsFromSnapshot(snapshot: unknown, count?: number): Options {
-  const source = (snapshot && typeof snapshot === 'object' ? snapshot : {}) as Record<string, unknown>;
-  const model =
-    typeof source.model === 'string' && SUPPORTED_MODELS.includes(source.model) ? source.model : DEFAULT_OPTIONS.model;
-  const snapshotCount = typeof count === 'number' && Number.isInteger(count) ? count : undefined;
-  const sourceCount =
-    typeof source.count === 'number' && Number.isInteger(source.count) ? source.count : DEFAULT_OPTIONS.count;
-  return {
-    model,
-    aspectRatio: resolveAspectRatio(model, typeof source.aspectRatio === 'string' ? source.aspectRatio : undefined),
-    imageSize: resolveImageSize(model, typeof source.imageSize === 'string' ? source.imageSize : undefined),
-    removeBackground:
-      typeof source.removeBackground === 'boolean' ? source.removeBackground : DEFAULT_OPTIONS.removeBackground,
-    count: Math.min(MAX_COUNT, Math.max(1, snapshotCount ?? sourceCount)),
-  };
+export type Options = { selection: GenerationSelection; count: number };
+/** The count-only dialog must merge into current options, never its opening selection. */
+export function applyCount(current: Options, count: number): Options {
+  if (!Number.isInteger(count) || count < 1 || count > 20) {
+    throw new Error('生成张数必须是 1–20 的整数');
+  }
+  return { ...current, count };
+}
+export function newOptions(providerId = 'google', modelId = 'gemini-3-pro-image', count = 1): Options {
+  const result = normalizeSelectionInput({ providerId, modelId, options: {} });
+  if (!result.ok) {
+    throw new Error('无法使用此渠道或模型');
+  }
+  return { selection: result.value, count };
+}
+const defaults = newOptions();
+export const DEFAULT_OPTIONS: Readonly<Options> = defaults;
+/** Unknown snapshots stay visible in history but cannot silently become another model. */
+export function optionsFromSnapshot(snapshot: unknown, count = 1, legacyProviderId?: LegacyProviderId): Options {
+  const isV2 = snapshot !== null && typeof snapshot === 'object' && 'version' in snapshot;
+  if (!isV2 && !legacyProviderId) {
+    throw new Error('旧任务需要服务端解析当前渠道后才能复用');
+  }
+  const result = decodeSelectionSnapshot(snapshot, { legacyProviderId: legacyProviderId ?? 'google' });
+  if (!result.ok) {
+    throw new Error(`无法复用此任务配置：${result.error.code}`);
+  }
+  return { selection: result.value.selection, count: Number.isInteger(count) ? Math.min(20, Math.max(1, count)) : 1 };
 }
 // Token parsing lives in a shared, node-free module so the CLI resolves the same tokens the UI does.
 export {
@@ -61,7 +62,12 @@ export interface ReusedDraft {
   missingImageNames: string[];
 }
 /** Restore one history job into the composer: authored prompt, image references, and generation options. */
-export function draftFromJob(job: JobSummary, assets: AssetRow[], uploads: UploadSummary[]): ReusedDraft {
+export function draftFromJob(
+  job: JobSummary,
+  assets: AssetRow[],
+  uploads: UploadSummary[],
+  legacyProviderId?: LegacyProviderId,
+): ReusedDraft {
   const authoredPrompt = job.authoredPrompt ?? job.promptSnapshot ?? '';
   const available = new Set(uploads.map((upload) => upload.id));
   const missingImages = (job.references ?? []).filter(
@@ -79,7 +85,7 @@ export function draftFromJob(job: JobSummary, assets: AssetRow[], uploads: Uploa
   return {
     prompt,
     referencedAssetIds: referencedIdsFromPrompt(prompt, assets),
-    options: optionsFromSnapshot(job.options, job.requestedCount),
+    options: optionsFromSnapshot(job.options, job.requestedCount, legacyProviderId),
     missingImageNames,
   };
 }
@@ -98,6 +104,11 @@ export const api = {
     }
     return data;
   },
+  providers: () =>
+    api.request<{
+      legacyProviderId: LegacyProviderId;
+      providers: Array<{ id: string; configured: boolean; reason: string; missingEnv: string[] }>;
+    }>('/api/image-providers'),
   assets: () => api.request<AssetRow[]>('/api/assets'),
   createAsset: (body: { name: string; prompt: string; category?: string }) =>
     api.request<AssetRow>('/api/assets', { method: 'POST', body: JSON.stringify(body) }),

@@ -69,32 +69,30 @@ describe('optionsFromSnapshot', () => {
     const options = optionsFromSnapshot(
       { model: 'gemini-3.1-flash-image-preview', aspectRatio: '16:9', imageSize: '4K', removeBackground: false },
       3,
+      'google',
     );
     expect(options).toEqual({
-      model: 'gemini-3.1-flash-image-preview',
-      aspectRatio: '16:9',
-      imageSize: '4K',
-      removeBackground: false,
+      selection: {
+        version: 2,
+        providerId: 'google',
+        modelId: 'gemini-3.1-flash-image-preview',
+        options: { aspectRatio: '16:9', imageSize: '4K' },
+        background: 'original',
+      },
       count: 3,
     });
   });
-  test('falls back to defaults and drops values the model cannot use', () => {
-    const options = optionsFromSnapshot({ model: 'retired-model', aspectRatio: '21:9', imageSize: '8K' });
-    expect(options).toEqual({
-      model: DEFAULT_MODEL,
-      aspectRatio: 'auto',
-      imageSize: 'auto',
-      removeBackground: true,
-      count: 1,
-    });
-    // Values are validated against the model that will actually run the job.
-    expect(optionsFromSnapshot({ model: 'retired-model', aspectRatio: '16:9' }).aspectRatio).toBe('16:9');
-    expect(optionsFromSnapshot(undefined).model).toBe(DEFAULT_MODEL);
+  test('unknown or unresolved configurations cannot silently fall back', () => {
+    expect(() => optionsFromSnapshot({ model: 'retired-model', removeBackground: true }, 1, 'google')).toThrow();
+    expect(() => optionsFromSnapshot(undefined)).toThrow();
+    expect(() => optionsFromSnapshot({ model: DEFAULT_MODEL, removeBackground: true })).toThrow();
+    expect(() => optionsFromSnapshot({ version: 99 })).toThrow();
   });
   test('clamps counts into the supported range', () => {
-    expect(optionsFromSnapshot({ count: 99 }).count).toBe(20);
-    expect(optionsFromSnapshot({ count: 0 }).count).toBe(1);
-    expect(optionsFromSnapshot({}, 2).count).toBe(2);
+    const snapshot = { model: DEFAULT_MODEL, removeBackground: true };
+    expect(optionsFromSnapshot(snapshot, 99, 'google').count).toBe(20);
+    expect(optionsFromSnapshot(snapshot, 0, 'google').count).toBe(1);
+    expect(optionsFromSnapshot(snapshot, 2, 'google').count).toBe(2);
   });
 });
 describe('history paging', () => {
@@ -140,25 +138,30 @@ describe('draftFromJob', () => {
     options: { model: DEFAULT_MODEL, aspectRatio: '16:9', imageSize: '2K', removeBackground: false },
   } as unknown as JobSummary;
   test('restores prompt, references, and options in one step', () => {
-    const draft = draftFromJob(job, assets, uploads);
+    const draft = draftFromJob(job, assets, uploads, 'google');
     expect(draft.prompt).toBe('@[风格](asset:a1) 按 ![头像](image:u1) 和 画');
     expect(draft.referencedAssetIds).toEqual(['a1']);
     expect(draft.options).toEqual({
-      model: DEFAULT_MODEL,
-      aspectRatio: '16:9',
-      imageSize: '2K',
-      removeBackground: false,
+      selection: {
+        version: 2,
+        providerId: 'google',
+        modelId: 'gemini-3-pro-image',
+        options: { aspectRatio: '16:9', imageSize: '2K' },
+        background: 'original',
+      },
       count: 4,
     });
   });
   test('reports reference images that are no longer available', () => {
-    const draft = draftFromJob(job, assets, uploads);
+    const draft = draftFromJob(job, assets, uploads, 'google');
     expect(draft.missingImageNames).toEqual(['旧图']);
     expect(draft.prompt).toBe('@[风格](asset:a1) 按 ![头像](image:u1) 和 画');
-    expect(draftFromJob(job, assets, uploads.concat([{ id: 'u9' } as UploadSummary])).missingImageNames).toEqual([]);
+    expect(
+      draftFromJob(job, assets, uploads.concat([{ id: 'u9' } as UploadSummary]), 'google').missingImageNames,
+    ).toEqual([]);
   });
   test('falls back to the expanded prompt when no authored prompt was stored', () => {
     const legacy = { ...job, authoredPrompt: undefined } as JobSummary;
-    expect(draftFromJob(legacy, assets, uploads).prompt).toBe('expanded');
+    expect(draftFromJob(legacy, assets, uploads, 'google').prompt).toBe('expanded');
   });
 });

@@ -11,6 +11,7 @@
 import { resolve } from 'node:path';
 import { renderHelp, renderHelpJson } from './src/cli-help';
 import { optionList, optionValue, parseCliArgs } from './src/cli-parse';
+import { parseProviderOptions } from './src/cli-provider-options';
 import {
   listAssets,
   listUploads,
@@ -28,6 +29,8 @@ import { findCommand, PROGRAM } from './src/cli-spec';
 import { openDatabase } from './src/db/client';
 import { createRepositories, type Repositories } from './src/db/repositories';
 import { CliError, InputError } from './src/errors';
+import type { ProviderEnv } from './src/image-providers/server/contracts';
+import { resolveLegacyProviderId } from './src/image-providers/server/env';
 import { ReferenceLookupError } from './src/jobs/references';
 import type { SingleImageGenerator } from './src/jobs/worker';
 
@@ -38,6 +41,7 @@ export interface CliIo {
 
 export interface CliDeps {
   /** Injected by tests so a run never calls the real provider. */
+  env?: ProviderEnv;
   generator?: SingleImageGenerator;
 }
 
@@ -214,10 +218,19 @@ async function dispatch(argv: readonly string[], io: CliIo, deps: CliDeps): Prom
     }
     default: {
       const databasePath = optionValue(values, '--database');
+      const providerId = optionValue(values, '--provider') ?? resolveLegacyProviderId(deps.env ?? process.env);
+      const providerOptions = parseProviderOptions(
+        providerId,
+        optionValue(values, '--model'),
+        optionList(values, '--option'),
+      );
       const outcome = await withRepositories(databasePath, (repo) =>
         runGeneration(
           repo,
           {
+            providerId,
+            options: providerOptions,
+            background: optionValue(values, '--background'),
             prompt: optionValue(values, '--prompt'),
             promptFile: optionValue(values, '--prompt-file'),
             assets: optionList(values, '--asset'),
@@ -230,6 +243,7 @@ async function dispatch(argv: readonly string[], io: CliIo, deps: CliDeps): Prom
             out: optionValue(values, '--out'),
           },
           {
+            env: deps.env,
             generator: deps.generator,
             onProgress: (done, total) => io.err(`generated ${done}/${total}\n`),
           },

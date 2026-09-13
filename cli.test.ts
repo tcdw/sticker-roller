@@ -53,7 +53,7 @@ const okGenerator: SingleImageGenerator = async () => ({
 
 async function run(argv: string[], deps = {}) {
   const sink = capture();
-  const code = await runCli(argv, sink.io, deps);
+  const code = await runCli(argv, sink.io, { env: { GEMINI_API_KEY: 'test-only' }, ...deps });
   return { code, stdout: sink.stdout(), stderr: sink.stderr() };
 }
 

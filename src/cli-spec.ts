@@ -5,8 +5,7 @@
  * 会按它渲染，因此不存在「help 里写了、解析器里没有」的漂移。
  */
 
-import { DEFAULT_MODEL, DEFAULT_REMOVE_BACKGROUND } from './config';
-import { AUTO, SUPPORTED_ASPECT_RATIOS, SUPPORTED_IMAGE_SIZES, SUPPORTED_MODELS } from './image-options';
+import { AUTO, SUPPORTED_ASPECT_RATIOS, SUPPORTED_IMAGE_SIZES } from './image-options';
 import { MAX_COUNT } from './jobs/options';
 
 export const SPEC_VERSION = 1;
@@ -66,7 +65,14 @@ export const ENV_VARS: ReadonlyArray<{ name: string; description: string }> = [
   { name: 'DATABASE_PATH', description: 'SQLite file shared with the web app (default ./data/sticker-roller.sqlite)' },
   { name: 'OUTPUT_DIR', description: 'default directory for --out' },
   { name: 'GEMINI_API_KEY', description: 'direct Google API key' },
-  { name: 'AI_GATEWAY_URL', description: 'AI Gateway URL; with AI_GATEWAY_TOKEN it replaces the direct API' },
+  {
+    name: 'AI_GATEWAY_URL',
+    description: 'AI Gateway URL; with its token selects Gateway only for legacy or unspecified-channel requests',
+  },
+  { name: 'OPENAI_API_KEY', description: 'OpenAI Images key' },
+  { name: 'OPENAI_BASE_URL', description: 'optional OpenAI Images HTTP(S) API root prefix' },
+  { name: 'OPENROUTER_API_KEY', description: 'OpenRouter Images key' },
+  { name: 'OPENROUTER_BASE_URL', description: 'optional OpenRouter Images HTTP(S) API root prefix' },
   { name: 'AI_GATEWAY_TOKEN', description: 'AI Gateway token' },
 ];
 
@@ -135,12 +141,28 @@ export const CLI_COMMANDS: readonly CliCommandSpec[] = [
         default: '1',
       },
       {
+        name: '--provider',
+        placeholder: 'channel',
+        description: 'API channel; omitted uses the legacy environment priority.',
+      },
+      {
+        name: '--option',
+        placeholder: 'name=value',
+        repeatable: true,
+        description: 'Channel option; duplicate keys and alias conflicts are rejected.',
+      },
+      {
+        name: '--background',
+        placeholder: 'strategy',
+        values: ['original', 'magenta-key', 'native-transparent'],
+        description: 'Background strategy supported by the selected model.',
+      },
+      {
         name: '--model',
         short: '-m',
         placeholder: 'model',
-        values: SUPPORTED_MODELS,
-        description: 'Image model.',
-        default: DEFAULT_MODEL,
+        description: 'Image model registered for the selected API channel.',
+        default: 'first model registered for the selected channel',
       },
       {
         name: '--aspect-ratio',
@@ -160,7 +182,7 @@ export const CLI_COMMANDS: readonly CliCommandSpec[] = [
       },
       {
         name: '--remove-background',
-        description: 'Chroma-key the magenta background to transparent (default).',
+        description: 'Use the selected model’s default background processing (magenta key or native transparency).',
         conflictsWith: '--no-remove-background',
       },
       {

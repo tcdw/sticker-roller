@@ -1,15 +1,24 @@
 import { stat } from 'node:fs/promises';
 import { basename, join, resolve, sep } from 'node:path';
 import type { Repositories } from '../src/db/repositories';
-import { InputError } from '../src/errors';
+import { ConfigError, InputError } from '../src/errors';
 import { isUuid } from '../src/ids';
-import { MAX_COUNT, MAX_PROMPT, validateOptions } from '../src/jobs/options';
+import { serializeSelection } from '../src/image-providers';
+import type { ProviderEnv } from '../src/image-providers/server/contracts';
+import { listProviderConfigStates, resolveLegacyProviderId } from '../src/image-providers/server/env';
+import {
+  MAX_COUNT,
+  MAX_PROMPT,
+  normalizeJobSelection,
+  requireSelectionConfigured,
+  validateGenerationInput,
+} from '../src/jobs/options';
 import { resolveJobInput } from '../src/jobs/references';
 import { MAX_UPLOAD_BYTES, sniffImageMimeType } from '../src/uploads';
 
 const jsonHeaders = { 'content-type': 'application/json; charset=utf-8' };
 
-type Deps = { repositories: Repositories; outputDir?: string };
+type Deps = { repositories: Repositories; outputDir?: string; env?: ProviderEnv };
 const response = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: jsonHeaders });
 const error = (status: number, code: string, message: string) => response({ error: { code, message } }, status);
 const ok = (data: unknown, status = 200) => response(data, status);
@@ -74,6 +83,7 @@ function publicJobsPage(repo: Repositories, limit: number, offset: number) {
 
 export function createApiHandler(deps: Deps) {
   const repo = deps.repositories;
+  const env = deps.env ?? process.env;
   const outputDir = resolve(deps.outputDir ?? process.env.OUTPUT_DIR ?? join(import.meta.dir, '../output'));
   return async function handler(req: Request): Promise<Response> {
     const url = new URL(req.url);
@@ -85,6 +95,9 @@ export function createApiHandler(deps: Deps) {
       }
       if (parts[0] !== 'api') {
         return error(404, 'NOT_FOUND', 'not found');
+      }
+      if (req.method === 'GET' && path === '/api/image-providers') {
+        return ok({ providers: listProviderConfigStates(env), legacyProviderId: resolveLegacyProviderId(env) });
       }
       if (parts[1] === 'assets') {
         if (req.method === 'GET' && parts.length === 2) {
@@ -228,7 +241,10 @@ export function createApiHandler(deps: Deps) {
             referencedAssetIds: rawRefs,
             referencedImageIds: rawImageIds,
           });
-          const options = validateOptions(b);
+          const selection = normalizeJobSelection(b, env);
+          validateGenerationInput(selection, resolved.prompt, resolved.imageRefs.length);
+          requireSelectionConfigured(selection, env);
+          const options = serializeSelection(selection);
           const job = repo.createJob({
             assetId: resolved.assetId,
             assetName: resolved.assetName,
@@ -290,6 +306,9 @@ export function createApiHandler(deps: Deps) {
       }
       return error(404, 'NOT_FOUND', 'not found');
     } catch (e) {
+      if (e instanceof ConfigError) {
+        return error(503, 'PROVIDER_NOT_CONFIGURED', e.message);
+      }
       if (e instanceof InputError) {
         return error(400, 'INVALID_INPUT', e.message);
       }

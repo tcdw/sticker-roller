@@ -1,34 +1,36 @@
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { createGateway, generateText } from 'ai';
+/**
+ * 生成编排：把一个已解码的配置（GenerationSelection）变成一张已验证的图片。
+ *
+ * 分工（定案 §3）：
+ * - adapter（src/image-providers/server/）负责认证、协议、模型映射、响应解析；
+ * - **本文件**负责背景策略、字节校验与领域返回，不含任何按厂商的分支；
+ * - worker 只拿完整 selection 调用这里，不再逐字段提取选项。
+ */
+
 import sharp from 'sharp';
-import { BACKGROUND_KEY_COLOR, DEFAULT_MODEL, DEFAULT_REMOVE_BACKGROUND, type StickerConfig } from './config';
-import { buildProviderImageConfig } from './image-options';
+import { BACKGROUND_KEY_COLOR, type StickerConfig } from './config';
+import type { GenerationSelection } from './image-providers';
+import type { FetchLike, ProviderEnv } from './image-providers/server';
+import { createAdapter } from './image-providers/server';
+import { verifyImageBytes } from './image-providers/server/image-bytes';
 
 /** Input for one image: the caller decides the output path (see src/jobs/worker.ts). */
 export interface ImageGenerationOptions {
   sticker: StickerConfig;
-  model?: string;
-  aspectRatio?: string;
-  imageSize?: string;
-  removeBackground?: boolean;
+  /** 已解码校验过的完整配置；编排层不再自行补默认值。 */
+  selection: GenerationSelection;
+  /** 注入式环境变量与 fetch，测试用假实现即可完全避开真实 provider。 */
+  env?: ProviderEnv;
+  fetch?: FetchLike;
+  signal?: AbortSignal;
 }
-
-type ImageConfigAspectRatio = '1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '4:5' | '5:4' | '9:16' | '16:9' | '21:9';
-
-type ImageConfigSize = '1K' | '2K' | '4K';
 
 const BACKGROUND_PROMPT_INSTRUCTION = `\n\nCRITICAL BACKGROUND INSTRUCTION: The entire background of this image must be a solid, uniform bright magenta color (${BACKGROUND_KEY_COLOR} / fuchsia). No gradients, no variations - pure ${BACKGROUND_KEY_COLOR}. The subject must be clearly separated from this magenta background. Do NOT use magenta, fuchsia, bright pink, purple, or violet colors anywhere on the subject, outline, glow, shadow, or edge pixels.`;
 
-function resolveRemoveBackground(options: ImageGenerationOptions): boolean {
-  if (options.removeBackground !== undefined) {
-    return options.removeBackground;
-  }
-  if (options.sticker.removeBackground !== undefined) {
-    return options.sticker.removeBackground;
-  }
-  return DEFAULT_REMOVE_BACKGROUND;
-}
-
+/**
+ * 洋红抠底：算法与迁移前逐字一致，不要顺手调参（阈值改动会直接改变所有历史风格的边缘）。
+ * 只在 background === 'magenta-key' 时执行，与原生透明互斥。
+ */
 async function removeBackground(imageBuffer: Buffer): Promise<Buffer> {
   const { data, info } = await sharp(imageBuffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
 
@@ -74,57 +76,6 @@ async function removeBackground(imageBuffer: Buffer): Promise<Buffer> {
     .toBuffer();
 }
 
-/**
- * Check if AI Gateway mode is enabled
- */
-function isGatewayMode(): boolean {
-  return !!(process.env.AI_GATEWAY_URL && process.env.AI_GATEWAY_TOKEN);
-}
-
-/**
- * Create the appropriate provider based on mode
- */
-function createProvider() {
-  if (isGatewayMode()) {
-    return createGateway({
-      baseURL: process.env.AI_GATEWAY_URL,
-      apiKey: process.env.AI_GATEWAY_TOKEN,
-    });
-  } else {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error('GEMINI_API_KEY environment variable is not set. Please set it in your .env file.');
-    }
-
-    const userAgent = process.env.GEMINI_USER_AGENT;
-    return createGoogleGenerativeAI({
-      apiKey,
-      headers: userAgent ? { 'User-Agent': userAgent } : undefined,
-    });
-  }
-}
-
-/**
- * Get the model ID based on mode and configuration
- */
-function getModelId(modelName: string = DEFAULT_MODEL): string {
-  if (isGatewayMode()) {
-    // Gateway uses the mapped model name
-    // For gemini-3-pro-image, it maps to google/gemini-3-pro-image
-    // For gemini-3.1-flash-image-preview, assume it maps similarly
-    if (modelName === 'gemini-3-pro-image') {
-      return 'google/gemini-3-pro-image';
-    }
-    return `google/${modelName}`;
-  } else {
-    // Direct API uses the actual model name
-    if (modelName === 'gemini-3-pro-image') {
-      return 'gemini-3-pro-image-preview';
-    }
-    return modelName;
-  }
-}
-
 export interface SingleImageResult {
   success: boolean;
   imageBuffer?: Buffer;
@@ -134,39 +85,34 @@ export interface SingleImageResult {
 
 /** Generate one image without choosing a filesystem path. */
 export async function generateSingleImage(options: ImageGenerationOptions): Promise<SingleImageResult> {
-  const aspectRatio = options.aspectRatio ?? options.sticker.aspectRatio;
-  const imageSize = options.imageSize ?? options.sticker.imageSize;
-  const imageConfig = buildProviderImageConfig({ aspectRatio, imageSize });
-  const doRemoveBg = resolveRemoveBackground(options);
+  const { selection } = options;
   try {
-    const content: Array<{ type: 'text'; text: string } | { type: 'image'; image: string; mimeType: string }> = [];
-    for (const refImage of options.sticker.referenceImages) {
-      content.push({ type: 'image', image: refImage.data, mimeType: refImage.mimeType });
-    }
-    content.push({
-      type: 'text',
-      text: doRemoveBg ? options.sticker.prompt + BACKGROUND_PROMPT_INSTRUCTION : options.sticker.prompt,
+    const adapter = createAdapter(selection.providerId, {
+      env: options.env ?? process.env,
+      fetch: options.fetch,
     });
-    const result = await generateText({
-      model: createProvider()(getModelId(options.model)),
-      messages: [{ role: 'user', content }],
-      providerOptions: Object.keys(imageConfig).length
-        ? {
-            google: {
-              imageConfig: imageConfig as { aspectRatio?: ImageConfigAspectRatio; imageSize?: ImageConfigSize },
-            },
-          }
-        : undefined,
+    const raw = await adapter.generate({
+      // 洋红提示词只在洋红策略下追加；原生透明路径的提示词绝不经过它。
+      prompt:
+        selection.background === 'magenta-key'
+          ? options.sticker.prompt + BACKGROUND_PROMPT_INSTRUCTION
+          : options.sticker.prompt,
+      referenceImages: options.sticker.referenceImages,
+      selection,
+      signal: options.signal,
     });
-    const file = result.files?.find((candidate) => candidate.mediaType?.startsWith('image/'));
-    if (!file) {
-      return { success: false, error: 'No image in response' };
+    const verified = await verifyImageBytes(raw.bytes);
+    if (raw.mimeType !== verified.mimeType) {
+      throw new Error('provider returned mismatched image MIME');
     }
-    let imageBuffer = Buffer.from(file.base64, 'base64') as Buffer;
-    if (doRemoveBg) {
-      imageBuffer = await removeBackground(imageBuffer);
+    if (selection.background === 'magenta-key') {
+      return { success: true, imageBuffer: await removeBackground(verified.bytes), mimeType: 'image/png' };
     }
-    return { success: true, imageBuffer, mimeType: doRemoveBg ? 'image/png' : file.mediaType };
+    if (selection.background === 'native-transparent' && !verified.hasAlpha) {
+      // 明确失败，不降级：定案 §1.6 要求原生透明不得回落到本地抠底。
+      throw new Error('provider returned an opaque image while native transparency was requested');
+    }
+    return { success: true, imageBuffer: verified.bytes, mimeType: verified.mimeType };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'image generation failed' };
   }

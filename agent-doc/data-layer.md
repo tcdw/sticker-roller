@@ -47,7 +47,7 @@ jobs ──1:N──► job_events（审计流水，只追加）
 | `authored_prompt_snapshot` | 用户原样写的文本（含 token），前端「展开提示词」显示的就是它 |
 | `references_snapshot` | 引用快照数组：文本素材在前、图片在后，图片项带 `kind:'image'` |
 | `prompt_snapshot` | **真正发给 provider** 的展开后文本 |
-| `options_snapshot` | 校验后的生成参数（`auto` 已被剔除，见 generation-flow） |
+| `options_snapshot` | 新任务保存 `{version:2, providerId, modelId, options, background}`，auto 省略，不含凭证/endpoint；旧无版本快照不改写，由 legacy decoder 解析 |
 | `asset_id` / `asset_name` | 首个文本素材的 id / 名字；纯文本提示词时 `asset_name` 为 `'text'` |
 | `requested_count` / `completed_count` / `failed_count` | 进度计数，由 `refreshJob()` 按 item 行重算 |
 | `status` / `cancelled_at` | 见下方状态机 |

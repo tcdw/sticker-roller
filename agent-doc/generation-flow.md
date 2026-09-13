@@ -42,25 +42,14 @@ promptText
 
 ## 单次生成
 
-`src/generator.ts` 的 `generateSingleImage()`：
+`src/generator.ts` 接收完整 `selection`，通过服务端 registry 选择 adapter。adapter 不操作数据库、不选输出路径。Google/Gateway 保留 SDK 模型映射；OpenAI 与 OpenRouter 使用独立 fetch 协议。
 
-```text
-参考图 content parts（顺序 = 引用顺序） + 文本
-        │
-        ▼
-provider 调用（createProvider → 直连 Google 或 AI Gateway）
-        │
-        ▼
-取 result.files 里第一个 image/* → base64 → Buffer
-        │
-        ▼
-removeBackground ? sharp 洋红抠底 → PNG : 原图
-```
-
-- **背景抠图**：提示词会追加一段「背景必须是纯洋红 `#FF00FF`」的硬指令（`BACKGROUND_PROMPT_INSTRUCTION`），拿到图后按像素距离 + 洋红优势度算 alpha，输出 PNG。`removeBackground` 为 false 时**既不追加指令也不抠**。
-- **`auto` 语义**：`auto` 表示「不向 provider 发送该字段」。`buildProviderImageConfig()` 会过滤掉它，`validateOptions()` 也不把它写进 `options_snapshot`，所以 `auto` 永远不会变成字符串发给 provider。
-- **模型名映射**：直连模式与 Gateway 模式的模型 id 不同（如 `gemini-3-pro-image` vs `gemini-3-pro-image-preview`），映射在 `getModelId()`。新增模型要同时改 `src/image-options.ts` 的 `SUPPORTED_MODELS` / `MODEL_CAPABILITIES` 和这里的映射。
-- 生成函数**只返回 buffer**，绝不决定落盘路径——路径由 worker 决定，这样测试才能注入假 generator。
+- `magenta-key`：追加原有洋红指令并运行原有 sharp 算法。
+- `native-transparent`：不追加洋红、不抠底；响应必须可解码且含 alpha，否则明确失败。
+- `original`：保留图片；GPT 请求明确发送 opaque。
+- 输入的 auto 在新任务归一化时省略；v2 decoder 不注入新默认值。无版本 legacy 按当前服务端配置选渠道，标记不是历史事实。
+- 新任务引用展开后和历史任务执行前共用输入限制：Gemini 14 张、GPT 16 张；GPT 展开 prompt 最多 32,000 字符。不能截断。
+- 生成结果只接受可完整解码的 PNG/JPEG/WebP，不信任图片声明 MIME，不下载远程返回 URL。落盘仍由 worker 管理。
 
 ## 队列执行
 

@@ -3,13 +3,18 @@ import { join } from 'node:path';
 import type { ReferenceImage, StickerConfig } from '../config';
 import type { Repositories } from '../db/repositories';
 import { generateSingleImage, type SingleImageResult } from '../generator';
+import { decodeSelectionSnapshot, type GenerationSelection } from '../image-providers';
+import type { ProviderEnv } from '../image-providers/server';
+import { resolveLegacyProviderId } from '../image-providers/server';
+import { validateGenerationInput } from './options';
 
+/**
+ * worker 只传**完整的已解码配置**，不复制字段。
+ * 新增渠道选项时不需要再改这里的透传清单（定案 §11 阶段三）。
+ */
 export type SingleImageGenerator = (input: {
   sticker: StickerConfig;
-  model?: string;
-  aspectRatio?: string;
-  imageSize?: string;
-  removeBackground?: boolean;
+  selection: GenerationSelection;
 }) => Promise<SingleImageResult>;
 export interface WorkerOptions {
   repositories: Repositories;
@@ -18,6 +23,8 @@ export interface WorkerOptions {
   heartbeatMs?: number;
   staleAfterMs?: number;
   maxAttempts?: number;
+  /** 注入式环境：决定无版本旧快照按哪个渠道解释，并传给真实 adapter。 */
+  env?: ProviderEnv;
 }
 
 const safeError = (error: unknown) => {
@@ -44,12 +51,14 @@ export class GenerationWorker {
   private readonly heartbeatMs: number;
   private readonly staleAfterMs: number;
   private readonly maxAttempts: number;
+  private readonly env: ProviderEnv;
   private stopped = false;
   private active?: Promise<void>;
   private loop?: Promise<void>;
   constructor(options: WorkerOptions) {
     this.repo = options.repositories;
-    this.generate = options.generator ?? generateSingleImage;
+    this.env = options.env ?? process.env;
+    this.generate = options.generator ?? ((input) => generateSingleImage({ ...input, env: this.env }));
     this.outputDir = options.outputDir ?? join(import.meta.dir, '../../output');
     this.heartbeatMs = options.heartbeatMs ?? 15_000;
     this.staleAfterMs = options.staleAfterMs ?? this.heartbeatMs * 2;
@@ -144,7 +153,17 @@ export class GenerationWorker {
     let finalPath: string | undefined;
     let tempPath: string | undefined;
     try {
-      const options = JSON.parse(job.optionsSnapshot) as Record<string, unknown>;
+      // 旧快照没记录渠道，按当前配置解析（与迁移前的 env 优先级一致）；
+      // v2 快照自带渠道，环境里多出别的 key 也不会改变它的路由。
+      const decoded = decodeSelectionSnapshot(JSON.parse(job.optionsSnapshot), {
+        legacyProviderId: resolveLegacyProviderId(this.env),
+      });
+      if (!decoded.ok) {
+        // 不静默回退默认模型：读不懂的配置必须明确失败，人工决定怎么处理。
+        throw new Error(
+          `unusable generation options: ${decoded.error.code}${decoded.error.path ? ` at ${decoded.error.path}` : ''}`,
+        );
+      }
       const references = JSON.parse(job.referencesSnapshot) as Array<{ kind?: string; id: string }>;
       const referenceImages: ReferenceImage[] = [];
       for (const reference of references) {
@@ -157,12 +176,10 @@ export class GenerationWorker {
         }
         referenceImages.push({ data: upload.data, mimeType: upload.mimeType, fileName: upload.name });
       }
+      validateGenerationInput(decoded.value.selection, job.promptSnapshot, referenceImages.length);
       const result = await this.generate({
         sticker: { name: job.assetName, prompt: job.promptSnapshot, referenceImages },
-        model: typeof options.model === 'string' ? options.model : undefined,
-        aspectRatio: typeof options.aspectRatio === 'string' ? options.aspectRatio : undefined,
-        imageSize: typeof options.imageSize === 'string' ? options.imageSize : undefined,
-        removeBackground: typeof options.removeBackground === 'boolean' ? options.removeBackground : undefined,
+        selection: decoded.value.selection,
       });
       if (!result.success || !result.imageBuffer) {
         throw new Error(result.error ?? 'generator returned no image');
