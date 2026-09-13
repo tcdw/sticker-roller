@@ -10,7 +10,8 @@
 | [web/workspace-layout.md](web/workspace-layout.md) | 工作台布局、交互与响应式契约 | 已实现，见 [../web-ui.md](../web-ui.md) |
 | [plan/](plan/) | docs-sprint 的 delivery plan：analysis / tasks / reviews | 已全部交付，结论已吸收进正文 |
 | [plan/backlog.md](plan/backlog.md) | **未完成事项**清单 | 仍然是 pending 工作的真实来源 |
-| [image-provider-directions-2026-09-12.md](image-provider-directions-2026-09-12.md) | OpenAI Images 直连与统一 OpenRouter 两条候选路线、取舍及验证计划 | **待定案、未实施**；不是当前 provider 配置 |
+| [image-provider-acl-2026-09-12.md](image-provider-acl-2026-09-12.md) | 图片生成防腐层、渠道专属选项与新 session 开工交接 | **路线三已定案，待实施**；当前开发方向 |
+| [image-provider-directions-2026-09-12.md](image-provider-directions-2026-09-12.md) | OpenAI Images 直连与统一 OpenRouter 两条候选路线、取舍及验证计划 | 历史备选，后续选择见路线三；原文冻结 |
 | [ai-gateway-integration.md](ai-gateway-integration.md) | AI Gateway 接入调研（为什么走 Vercel 路由） | 结论有效；文中「代码结构」一节已过时 |
 
 ## 阅读时的注意事项
@@ -26,4 +27,5 @@
 | --- | --- |
 | 现在怎么跑、怎么验证 | [../../AGENTS.md](../../AGENTS.md) |
 | 当前架构与不变量 | [../architecture.md](../architecture.md) |
-| 还没做的事 | [plan/backlog.md](plan/backlog.md) |
+| 路线三开工：图片生成防腐层与渠道选项 | [image-provider-acl-2026-09-12.md](image-provider-acl-2026-09-12.md) |
+| 其他历史未完成事项 | [plan/backlog.md](plan/backlog.md) |
